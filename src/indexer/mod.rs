@@ -291,12 +291,18 @@ impl Indexer {
 
         let mut updates: Vec<FileUpdate> = Vec::new();
 
-        for file_path in changed_files {
-            let full_path = path.join(file_path.trim_start_matches('/'));
+        for changed_file in changed_files {
+            // Ensure we have a clean absolute path to read from
+            let full_path = if Path::new(changed_file).is_absolute() {
+                std::path::PathBuf::from(changed_file)
+            } else {
+                path.join(changed_file)
+            };
+
             if !full_path.exists() {
                 // Mark deleted files for removal in Phase 3
                 updates.push(FileUpdate {
-                    file_path: file_path.clone(),
+                    file_path: changed_file.clone(),
                     content_hash: String::new(),
                     source: String::new(),
                     extraction: extractors::ExtractionResult {
@@ -322,7 +328,7 @@ impl Indexer {
                     .conn
                     .lock()
                     .map_err(|e| anyhow::anyhow!("DB lock poisoned: {}", e))?;
-                let existing_hash = db::queries::get_file_state_hash(&conn, project_id, file_path)?;
+                let existing_hash = db::queries::get_file_state_hash(&conn, project_id, changed_file)?;
                 if existing_hash.as_deref() == Some(&content_hash_str) {
                     continue;
                 }
@@ -332,7 +338,7 @@ impl Indexer {
                 Some(p) => Some(p),
                 None => {
                     let is_special =
-                        manifests::is_manifest_file(file_path) || infra::is_infra_file(file_path);
+                        manifests::is_manifest_file(changed_file) || infra::is_infra_file(changed_file);
                     if is_special {
                         None
                     } else {
@@ -358,11 +364,11 @@ impl Indexer {
                     .conn
                     .lock()
                     .map_err(|e| anyhow::anyhow!("DB lock poisoned: {}", e))?;
-                db::queries::get_nodes_by_file(&conn, project_id, file_path).unwrap_or_default()
+                db::queries::get_nodes_by_file(&conn, project_id, changed_file).unwrap_or_default()
             };
 
             updates.push(FileUpdate {
-                file_path: file_path.clone(),
+                file_path: changed_file.clone(),
                 content_hash: content_hash_str,
                 source,
                 extraction,
