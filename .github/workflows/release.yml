@@ -24,27 +24,27 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             npm-pkg: linux-x64
-            binary: codebase-memory
+            binary: codebase-synapse
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             npm-pkg: linux-arm64
-            binary: codebase-memory
+            binary: codebase-synapse
           - target: x86_64-apple-darwin
             os: macos-latest
             npm-pkg: darwin-x64
-            binary: codebase-memory
+            binary: codebase-synapse
           - target: aarch64-apple-darwin
             os: macos-latest
             npm-pkg: darwin-arm64
-            binary: codebase-memory
+            binary: codebase-synapse
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             npm-pkg: win32-x64
-            binary: codebase-memory.exe
+            binary: codebase-synapse.exe
           - target: aarch64-pc-windows-msvc
             os: windows-latest
             npm-pkg: win32-arm64
-            binary: codebase-memory.exe
+            binary: codebase-synapse.exe
 
     steps:
       - name: Checkout repository
@@ -108,7 +108,6 @@ jobs:
 
       - name: Prepare platform packages
         run: |
-          # Map npm platform directories to target triples
           declare -A targets
           targets[linux-x64]="x86_64-unknown-linux-gnu"
           targets[linux-arm64]="aarch64-unknown-linux-gnu"
@@ -120,13 +119,13 @@ jobs:
           for pkg in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
             mkdir -p npm/platform-packages/$pkg
             target="${targets[$pkg]}"
-            cp artifacts/binary-$pkg/codebase-memory npm/platform-packages/$pkg/codebase-memory-$target
-            chmod +x npm/platform-packages/$pkg/codebase-memory-$target
+            cp artifacts/binary-$pkg/codebase-synapse npm/platform-packages/$pkg/codebase-synapse-$target
+            chmod +x npm/platform-packages/$pkg/codebase-synapse-$target
           done
           for pkg in win32-x64 win32-arm64; do
             mkdir -p npm/platform-packages/$pkg
             target="${targets[$pkg]}"
-            cp artifacts/binary-$pkg/codebase-memory.exe npm/platform-packages/$pkg/codebase-memory-$target.exe
+            cp artifacts/binary-$pkg/codebase-synapse.exe npm/platform-packages/$pkg/codebase-synapse-$target.exe
           done
 
       - name: Update versions and dependency mappings
@@ -167,16 +166,15 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Prepare release assets directory
+      - name: Prepare release assets
         run: |
           mkdir -p release-assets
           for pkg in linux-x64 linux-arm64 darwin-x64 darwin-arm64; do
-            cp artifacts/binary-$pkg/codebase-memory release-assets/codebase-memory-$pkg
+            cp artifacts/binary-$pkg/codebase-synapse release-assets/codebase-synapse-$pkg
           done
           for pkg in win32-x64 win32-arm64; do
-            cp artifacts/binary-$pkg/codebase-memory.exe release-assets/codebase-memory-$pkg.exe
+            cp artifacts/binary-$pkg/codebase-synapse.exe release-assets/codebase-synapse-$pkg.exe
           done
-          # Generate checksums
           cd release-assets
           sha256sum * > SHA256SUMS
           cd ..
