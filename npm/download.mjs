@@ -39,7 +39,7 @@ if (existsSync(destPath)) {
 }
 
 const version = pkg.version;
-const url = `https://github.com/codebase-synapse/index/releases/download/v${version}/${binaryName}`;
+const url = `https://github.com/iwiels/codebase-synapse/releases/download/v${version}/${binaryName}`;
 
 console.log(`Downloading codebase-synapse v${version} for ${key}...`);
 console.log(`  ${url}`);

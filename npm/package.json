@@ -1,6 +1,6 @@
 {
   "name": "codebase-synapse",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server that indexes your codebase into a local knowledge graph. Gives AI agents (Claude Code, Cursor, Zed, etc.) semantic search, call graph traversal, git archaeology, and blast-radius analysis.",
   "bin": {
     "codebase-synapse": "bin/index.js"
@@ -10,7 +10,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/codebase-synapse/index.git"
+    "url": "git+https://github.com/iwiels/codebase-synapse.git"
   },
   "keywords": [
     "mcp",
@@ -40,11 +40,11 @@
     "arm64"
   ],
   "optionalDependencies": {
-    "@codebase-synapse/index-win32-x64": "0.1.0",
-    "@codebase-synapse/index-win32-arm64": "0.1.0",
-    "@codebase-synapse/index-darwin-x64": "0.1.0",
-    "@codebase-synapse/index-darwin-arm64": "0.1.0",
-    "@codebase-synapse/index-linux-x64": "0.1.0",
-    "@codebase-synapse/index-linux-arm64": "0.1.0"
+    "@codebase-synapse/index-win32-x64": "0.1.1",
+    "@codebase-synapse/index-win32-arm64": "0.1.1",
+    "@codebase-synapse/index-darwin-x64": "0.1.1",
+    "@codebase-synapse/index-darwin-arm64": "0.1.1",
+    "@codebase-synapse/index-linux-x64": "0.1.1",
+    "@codebase-synapse/index-linux-arm64": "0.1.1"
   }
 }
