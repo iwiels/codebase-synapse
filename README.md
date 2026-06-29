@@ -1,48 +1,87 @@
 # codebase-synapse 🧠
 
-[![NPM Version](https://img.shields.io/npm/v/codebase-synapse.svg)](https://www.npmjs.com/package/codebase-synapse)
+> **The MCP server that gives your AI agent a brain.**
+
+[![npm](https://img.shields.io/npm/v/codebase-synapse.svg)](https://www.npmjs.com/package/codebase-synapse)
+[![npm downloads](https://img.shields.io/npm/dm/codebase-synapse.svg)](https://www.npmjs.com/package/codebase-synapse)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
+[![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-blue.svg)](https://modelcontextprotocol.io/)
 
-**codebase-synapse** is a high-performance Model Context Protocol (MCP) server that indexes your codebases into a local SQLite-backed knowledge graph. It enables AI agents (such as Claude Code, Cursor, and Windsurf) to perform deep semantic searches, trace call graphs, conduct blast-radius impact analysis, track architectural decisions (ADRs), and query git history narratives.
-
-By replacing token-heavy file reads with targeted semantic and structural graph queries, **codebase-synapse** reduces agent token consumption by up to **90%**.
-
----
-
-## Key Features
-
-- **🎯 Context Budgeting (`prepare_task_context`):** Assembles an optimal, token-aware context bundle (relevant symbols, callers/callees, impact analysis, notes) for any natural-language task description in one request.
-- **🔍 Hybrid Search:** Combines fast SQLite FTS5 (BM25) full-text search with local vector embeddings (via Candle/all-MiniLM-L6-v2) using Reciprocal Rank Fusion (RRF).
-- **🕸️ Code Knowledge Graph:** Extracts AST nodes (classes, functions, variables) and relation edges (calls, imports, similar_to) using Tree-sitter.
-- **📜 Git Archaeology (`git_archaeology`):** Narrates *why* code exists, combining git history, churn rates, and complexity to map technical debt hotspots.
-- **🏛️ Architecture Decision Records (ADRs):** Exposes ADR CRUD tools so your AI agents can read and write architectural decisions.
-- **💾 Persistent Memory:** Session and project-level memory stores for facts, insights, and decisions that survive agent resets.
+Stop letting your AI agent read entire files to answer a single question.
+**codebase-synapse** indexes your codebase into a local knowledge graph so your agent can query *exactly* what it needs — call chains, blast radius, architectural decisions, git history — in a single tool call.
 
 ---
 
-## Installation & Usage
+## The Problem
 
-### The One-Liner (Recommended)
+When you ask Claude Code or Cursor *"what breaks if I change this function?"*, the agent reads **entire files** to figure it out. That's slow, expensive, and hits context limits fast.
 
-Run directly via `npx` (downloads the pre-built binary for your OS automatically):
+## The Solution
 
-```bash
-npx codebase-synapse
+codebase-synapse builds a **persistent, local knowledge graph** of your codebase using Tree-sitter AST parsing and SQLite. Your AI agent queries the graph instead of reading files — getting precise, structured answers in milliseconds.
+
+```
+# Without codebase-synapse:
+Agent reads 47 files to understand one function → 12,000 tokens
+
+# With codebase-synapse:
+Agent calls impact_analysis() → 200 tokens, same answer
 ```
 
-### Config for Claude Desktop / Antigravity
+---
 
-Add this configuration to your `mcp_config.json`:
+## One Command to Set Up Everything
+
+```bash
+npx codebase-synapse install
+```
+
+That's it. The installer **automatically detects** which AI agents you have on your machine and configures all of them:
+
+```
+  🔍 codebase-synapse installer
+  /Users/you/my-project
+
+  ✓ Detected: Claude Code, Cursor, VS Code
+
+  Select AI agents to configure:
+  ❯ ◉ Claude Code
+    ◉ Cursor
+    ◉ VS Code
+
+  ✓ Claude Code  → ~/.claude/.mcp.json
+  ✓ Cursor       → .cursor/mcp.json
+  ✓ VS Code      → .vscode/mcp.json
+
+  Done! Restart your AI agent to use codebase-synapse.
+```
+
+**Supported agents — detected automatically:**
+
+| Agent | Auto-detected? | Config Written |
+|---|:---:|---|
+| Claude Code | ✅ | `~/.claude/.mcp.json` |
+| OpenCode | ✅ | `~/.config/opencode/mcp.json` |
+| Cursor | ✅ | `.cursor/mcp.json` |
+| VS Code | ✅ | `.vscode/mcp.json` |
+| Zed | ✅ | `~/.config/zed/settings.json` |
+| Gemini CLI | ✅ | `~/.config/gemini/settings.json` |
+| Aider | ✅ | `.aider.conf.yml` |
+| Continue.dev | ✅ | `~/.continue/config.json` |
+
+No copy-pasting JSON. No reading documentation. Just run one command.
+
+---
+
+## Manual Config (for any MCP client)
 
 ```json
 {
   "mcpServers": {
     "codebase-synapse": {
       "command": "npx",
-      "args": [
-        "-y",
-        "codebase-synapse"
-      ]
+      "args": ["-y", "codebase-synapse", "--project-root", "."]
     }
   }
 }
@@ -50,55 +89,101 @@ Add this configuration to your `mcp_config.json`:
 
 ---
 
-## MCP Tools Reference
+## What Can Your Agent Do Now?
 
-Here is a summary of the tools exposed by `codebase-synapse`:
+After indexing, just tell your agent:
 
-| Category | Tool | Description |
-|---|---|---|
-| **Indexing** | `index_repository` | Index a codebase into the knowledge graph |
-| | `reindex_changed` | Incremental update for modified files |
-| **Search** | `search_symbol` | Search nodes by name or pattern |
-| | `search_code` | Full-text FTS5 BM25 search over code |
-| | `hybrid_search` | BM25 + Vector Semantic Search with RRF |
-| **Graph** | `get_callers` / `get_callees` | Find incoming/outgoing call chains |
-| | `get_dependents` / `get_imports` | Analyze imports and dependency edges |
-| | `impact_analysis` | Blast-radius analysis before modifying code |
-| | `find_path` | Trace call path between two symbols |
-| **Git & Quality**| `git_archaeology` | Commit narrative for a specific symbol |
-| | `get_hotspots` | Churn × complexity technical debt hotspots |
-| | `get_contracts` | Map test contracts (`test_of` relations) |
-| **Memory** | `memory_store` / `memory_search`| Persist codebase notes, facts, and insights |
-| | `session_remember` / `session_recall`| Short-term key-value session memory |
-| **ADR** | `manage_adr` | CRUD architectural decision records |
+> *"What files would break if I rename this function?"*
+> *"Show me all callers of `processPayment` across the entire codebase"*
+> *"Why does this code exist? Show me the git history"*
+> *"What are the highest-risk files to edit right now?"*
+
+These are answered in **one tool call** instead of reading dozens of files.
 
 ---
 
-## Competitor Comparison
+## Key Features
 
-| Feature | **codebase-synapse** | **qartez-mcp** | **code-graph-mcp** |
-|---|:---:|:---:|:---:|
-| `prepare_task_context` (Context Bundle) | **✅ Yes** | ❌ No | ❌ No |
-| `git_archaeology` (Git Narratives) | **✅ Yes** | ❌ No | ❌ No |
-| `manage_adr` (Architecture Records) | **✅ Yes** | ❌ No | ❌ No |
-| `query_graph` (Cypher queries) | **✅ Yes** | ❌ No | ❌ No |
-| Hybrid Semantic Search | **✅ Yes** | ✅ Yes | ✅ Yes |
-| Incremental Re-indexing | **✅ Yes** | ✅ Yes | ✅ Yes |
-| Platform Packaging | **✅ Yes** | ✅ Yes | ✅ Yes |
+### 🎯 Context Budgeting (`prepare_task_context`)
+Describe your task in plain English. Synapse assembles the optimal context bundle — relevant symbols, callers/callees, impact analysis, related notes — tuned to your token budget.
+
+### 🕸️ Knowledge Graph + Blast Radius Analysis
+Every function, class, import, and call relationship is mapped. Before touching a file, run `impact_analysis` to see exactly what you'd break.
+
+### 🔍 Hybrid Semantic Search
+BM25 full-text search + local vector embeddings (all-MiniLM-L6-v2, runs offline) fused with Reciprocal Rank Fusion. No OpenAI API required.
+
+### 📜 Git Archaeology
+`git_archaeology` doesn't just show you commits — it narrates *why* code exists, combining commit messages, churn rates, and complexity scores to explain the evolutionary history of any symbol.
+
+### 🏛️ Architecture Decision Records (ADRs)
+Your agent can read and write ADRs directly. Decisions are part of the knowledge graph, not a forgotten markdown file.
+
+### 💾 Persistent Memory
+Facts, insights, and decisions survive agent resets. Store them at session or project level.
+
+### 🛡️ codebase-guard *(Claude Code only)*
+An optional `PreToolUse` hook that automatically **blocks edits to architectural hubs** (files with high PageRank + blast radius) and requires an impact review first. Prevents accidental breakage of critical infrastructure.
+
+---
+
+## How It Compares
+
+| Feature | **codebase-synapse** | CodeGraphContext | CodeGraph | codebase-memory-mcp |
+|---|:---:|:---:|:---:|:---:|
+| Auto-install for 8+ agents | **✅** | ❌ | ❌ | ❌ |
+| `prepare_task_context` (token budget) | **✅** | ❌ | ❌ | ❌ |
+| Git Archaeology & Narratives | **✅** | ❌ | ❌ | ❌ |
+| Architecture Decision Records | **✅** | ❌ | ❌ | ❌ |
+| Cypher-like graph queries | **✅** | ❌ | ❌ | ❌ |
+| Boundary violation detection | **✅** | ❌ | ❌ | ❌ |
+| codebase-guard hook | **✅** | ❌ | ❌ | ❌ |
+| Hybrid semantic search | **✅** | ✅ | ✅ | ✅ |
+| Incremental re-indexing | **✅** | ✅ | ✅ | ✅ |
+| Local / offline (no API keys) | **✅** | ✅ | ✅ | ❌ |
+
+---
+
+## MCP Tools Reference
+
+| Category | Tool | Description |
+|---|---|---|
+| **Context** | `prepare_task_context` | Token-optimal context bundle for a task |
+| **Indexing** | `index_repository` | Build the knowledge graph |
+| | `reindex_changed` | Incremental update for changed files |
+| **Search** | `search_symbol` | Find any symbol by name/pattern |
+| | `search_code` | BM25 full-text code search |
+| | `hybrid_search` | BM25 + vector search with RRF |
+| | `find_similar` | Semantically similar code fragments |
+| **Graph** | `get_callers` / `get_callees` | Incoming/outgoing call chains |
+| | `get_dependents` / `get_imports` | Dependency edges |
+| | `impact_analysis` | Blast-radius before touching a file |
+| | `find_path` | Call path between two symbols |
+| | `query_graph` | Cypher-like graph queries |
+| **Git & Quality** | `git_archaeology` | Why does this code exist? |
+| | `get_hotspots` | Churn × complexity debt map |
+| | `index_git_history` | Index full commit history |
+| **Architecture** | `manage_adr` | CRUD architectural decisions |
+| | `check_boundaries` | Detect import boundary violations |
+| | `suggest_boundaries` | Auto-generate rules from clusters |
+| | `get_clusters` | Leiden community detection |
+| **Memory** | `memory_store` / `memory_search` | Persistent project notes |
+| | `session_remember` / `session_recall` | Short-term session memory |
+| **Projects** | `list_projects` | All indexed projects |
+| | `project_overview` | Graph stats and summary |
+| | `get_architecture` | High-level architectural view |
 
 ---
 
 ## Build from Source
 
-If you prefer to build from source, ensure you have Rust installed:
+Requires [Rust](https://rustup.rs/):
 
 ```bash
 git clone https://github.com/codebase-synapse/index.git
 cd index
 cargo build --release
 ```
-
-Run tests:
 
 ```bash
 cargo test --no-default-features
@@ -108,4 +193,4 @@ cargo test --no-default-features
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT — see [LICENSE](./LICENSE).

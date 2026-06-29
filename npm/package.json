@@ -1,9 +1,9 @@
 {
   "name": "codebase-synapse",
   "version": "0.1.0",
-  "description": "Codebase Knowledge Graph MCP server – index, search, and explore your codebase with AI",
+  "description": "MCP server that indexes your codebase into a local knowledge graph. Gives AI agents (Claude Code, Cursor, Zed, etc.) semantic search, call graph traversal, git archaeology, and blast-radius analysis.",
   "bin": {
-    "index": "bin/index.js"
+    "codebase-synapse": "bin/index.js"
   },
   "scripts": {
     "postinstall": "node download.mjs"
@@ -18,7 +18,12 @@
     "knowledge-graph",
     "code-search",
     "tree-sitter",
-    "ai"
+    "ai",
+    "claude",
+    "cursor",
+    "llm",
+    "semantic-search",
+    "graph"
   ],
   "author": "",
   "license": "MIT",

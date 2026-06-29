@@ -1,5 +1,5 @@
 // tests/wiki_test.rs
-use codebase_memory::graph::wiki::{render_wiki, WikiConfig};
+use codebase_synapse::graph::wiki::{render_wiki, WikiConfig};
 use std::collections::HashMap;
 
 #[test]

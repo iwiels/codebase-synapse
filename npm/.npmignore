@@ -1,0 +1,28 @@
+# Rust build artifacts
+target/
+target_custom/
+*.d
+*.pdb
+
+# Source code (not needed in npm package)
+src/
+tests/
+codebase-guard/
+scripts/
+.github/
+
+# Dev files
+Cargo.toml
+Cargo.lock
+rust-toolchain.toml
+.gitignore
+.gitattributes
+stdout.log
+
+# Node dev
+node_modules/
+
+# Editor
+.vscode/
+.idea/
+*.swp

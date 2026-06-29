@@ -4,11 +4,11 @@ use std::sync::{Arc, Mutex};
 use rusqlite::Connection;
 use tempfile::TempDir;
 
-use codebase_memory::config::Config;
-use codebase_memory::db;
-use codebase_memory::embedding::Embedder;
-use codebase_memory::indexer::Indexer;
-use codebase_memory::mcp::{McpTransport, ToolRegistry};
+use codebase_synapse::config::Config;
+use codebase_synapse::db;
+use codebase_synapse::embedding::Embedder;
+use codebase_synapse::indexer::Indexer;
+use codebase_synapse::mcp::{McpTransport, ToolRegistry};
 
 pub struct MockEmbedder;
 

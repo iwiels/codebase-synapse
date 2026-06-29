@@ -1,5 +1,5 @@
 // tests/leiden_test.rs
-use codebase_memory::graph::leiden::{leiden_raw, LeidenConfig};
+use codebase_synapse::graph::leiden::{leiden_raw, LeidenConfig};
 
 #[test]
 fn test_leiden_single_node() {

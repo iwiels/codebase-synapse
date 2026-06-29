@@ -8,5 +8,11 @@
     "arm64"
   ],
   "main": "index.js",
-  "binary-path": "index.js"
+  "binary-path": "index.js",
+  "description": "macOS ARM64 binary for codebase-synapse",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codebase-synapse/index.git"
+  }
 }

@@ -7,7 +7,7 @@ fn test_pagerank_columns_exist() {
     let dir = tempdir().unwrap();
     let db_path = dir.path().join("test.db");
     let conn = Connection::open(&db_path).unwrap();
-    codebase_memory::db::schema::migrate(&conn).unwrap();
+    codebase_synapse::db::schema::migrate(&conn).unwrap();
     
     // node_pagerank table must exist
     let count: i64 = conn.query_row(
@@ -30,13 +30,13 @@ fn test_pagerank_columns_exist() {
 fn test_get_all_import_edges_empty() {
     let dir = tempdir().unwrap();
     let conn = Connection::open(dir.path().join("test.db")).unwrap();
-    codebase_memory::db::schema::migrate(&conn).unwrap();
+    codebase_synapse::db::schema::migrate(&conn).unwrap();
     conn.execute(
         "INSERT INTO projects (name, root_path) VALUES ('p', '/tmp')",
         [],
     ).unwrap();
 
-    let edges = codebase_memory::db::queries::get_all_import_edges(&conn, 1).unwrap();
+    let edges = codebase_synapse::db::queries::get_all_import_edges(&conn, 1).unwrap();
     assert!(edges.is_empty());
 }
 
@@ -44,7 +44,7 @@ fn test_get_all_import_edges_empty() {
 fn test_update_pagerank_and_get() {
     let dir = tempdir().unwrap();
     let conn = Connection::open(dir.path().join("test.db")).unwrap();
-    codebase_memory::db::schema::migrate(&conn).unwrap();
+    codebase_synapse::db::schema::migrate(&conn).unwrap();
     conn.execute(
         "INSERT INTO projects (name, root_path) VALUES ('p', '/tmp')",
         [],
@@ -55,14 +55,14 @@ fn test_update_pagerank_and_get() {
     ).unwrap();
     let node_id: i64 = conn.query_row("SELECT last_insert_rowid()", [], |r| r.get(0)).unwrap();
 
-    codebase_memory::db::queries::update_node_pagerank(&conn, node_id, 1, 0.42).unwrap();
-    let rank = codebase_memory::db::queries::get_node_pagerank(&conn, node_id).unwrap();
+    codebase_synapse::db::queries::update_node_pagerank(&conn, node_id, 1, 0.42).unwrap();
+    let rank = codebase_synapse::db::queries::get_node_pagerank(&conn, node_id).unwrap();
     assert!((rank - 0.42).abs() < 1e-9);
 }
 
 #[test]
 fn test_pagerank_inner_isolated_node() {
-    use codebase_memory::graph::pagerank::pagerank_inner;
+    use codebase_synapse::graph::pagerank::pagerank_inner;
     let nodes = vec![1i64];
     let edges: Vec<(i64, i64)> = vec![];
     let prev = std::collections::HashMap::new();
@@ -72,7 +72,7 @@ fn test_pagerank_inner_isolated_node() {
 
 #[test]
 fn test_pagerank_inner_hub_beats_leaf() {
-    use codebase_memory::graph::pagerank::pagerank_inner;
+    use codebase_synapse::graph::pagerank::pagerank_inner;
     // node 2 is the hub (imported by node 1)
     let nodes = vec![1i64, 2i64];
     let edges = vec![(1i64, 2i64)];
@@ -84,7 +84,7 @@ fn test_pagerank_inner_hub_beats_leaf() {
 
 #[test]
 fn test_pagerank_ranks_sum_to_approximately_one() {
-    use codebase_memory::graph::pagerank::pagerank_inner;
+    use codebase_synapse::graph::pagerank::pagerank_inner;
     let nodes = vec![1i64, 2i64, 3i64];
     let edges = vec![(1, 2), (2, 3), (3, 1)];
     let prev = std::collections::HashMap::new();
@@ -95,7 +95,7 @@ fn test_pagerank_ranks_sum_to_approximately_one() {
 
 #[test]
 fn test_pagerank_warm_start_same_result() {
-    use codebase_memory::graph::pagerank::pagerank_inner;
+    use codebase_synapse::graph::pagerank::pagerank_inner;
     let nodes = vec![1i64, 2i64];
     let edges = vec![(1, 2)];
     let prev_empty = std::collections::HashMap::new();

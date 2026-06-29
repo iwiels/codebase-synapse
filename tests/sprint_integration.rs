@@ -5,7 +5,7 @@ use rusqlite::Connection;
 fn setup() -> (tempfile::TempDir, Connection) {
     let dir = tempdir().unwrap();
     let conn = Connection::open(dir.path().join("test.db")).unwrap();
-    codebase_memory::db::schema::migrate(&conn).unwrap();
+    codebase_synapse::db::schema::migrate(&conn).unwrap();
     (dir, conn)
 }
 
@@ -37,12 +37,12 @@ fn test_pagerank_hub_beats_leaf() {
     let main = insert_node(&conn, pid, "src/main.rs", "file");
     insert_edge(&conn, pid, main, lib, "imports");
 
-    codebase_memory::graph::compute_pagerank(
-        &conn, pid, &codebase_memory::graph::PageRankConfig::default()
+    codebase_synapse::graph::compute_pagerank(
+        &conn, pid, &codebase_synapse::graph::PageRankConfig::default()
     ).unwrap();
 
-    let r_lib = codebase_memory::db::queries::get_node_pagerank(&conn, lib).unwrap();
-    let r_main = codebase_memory::db::queries::get_node_pagerank(&conn, main).unwrap();
+    let r_lib = codebase_synapse::db::queries::get_node_pagerank(&conn, lib).unwrap();
+    let r_main = codebase_synapse::db::queries::get_node_pagerank(&conn, main).unwrap();
     assert!(r_lib > r_main, "lib (hub) must have higher rank than main: lib={} main={}", r_lib, r_main);
 }
 
@@ -58,8 +58,8 @@ fn test_leiden_persists_clusters() {
         insert_edge(&conn, pid, nodes[s], nodes[d], "imports");
     }
 
-    let report = codebase_memory::graph::compute_clusters(
-        &conn, pid, &codebase_memory::graph::LeidenConfig::default()
+    let report = codebase_synapse::graph::compute_clusters(
+        &conn, pid, &codebase_synapse::graph::LeidenConfig::default()
     ).unwrap();
 
     assert!(report.cluster_count >= 1);
@@ -72,7 +72,7 @@ fn test_leiden_persists_clusters() {
 
 #[test]
 fn test_boundary_violation_e2e() {
-    use codebase_memory::graph::boundaries::{BoundaryConfig, BoundaryRule, check_boundaries};
+    use codebase_synapse::graph::boundaries::{BoundaryConfig, BoundaryRule, check_boundaries};
     let config = BoundaryConfig { boundary: vec![BoundaryRule {
         from: "src/api/**".into(), deny: vec!["src/db/**".into()], allow: vec![],
     }]};
@@ -91,8 +91,8 @@ fn test_wiki_rendered_from_clusters_db() {
         "INSERT INTO file_clusters (project_id, file_path, cluster_id) VALUES (?1,'src/api.rs',1)",
         rusqlite::params![pid],
     ).unwrap();
-    let cfg = codebase_memory::graph::WikiConfig { project_name: "test".into(), max_files_per_cluster: 20 };
-    let md = codebase_memory::graph::generate_wiki(&conn, pid, &cfg).unwrap();
+    let cfg = codebase_synapse::graph::WikiConfig { project_name: "test".into(), max_files_per_cluster: 20 };
+    let md = codebase_synapse::graph::generate_wiki(&conn, pid, &cfg).unwrap();
     assert!(md.contains("Cluster 1"), "wiki must contain Cluster 1");
     assert!(md.contains("src/api.rs"), "wiki must list the file");
     let _ = n1;
@@ -113,7 +113,7 @@ fn test_hotspots_debt_map() {
         rusqlite::params![pid, n1],
     ).unwrap();
 
-    let analyzer = codebase_memory::git::HotspotAnalyzer::new(&conn);
+    let analyzer = codebase_synapse::git::HotspotAnalyzer::new(&conn);
     let hotspots = analyzer.get_hotspots(pid, 10).unwrap();
     assert_eq!(hotspots.len(), 1);
 

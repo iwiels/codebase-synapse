@@ -1,5 +1,5 @@
 // tests/boundaries_test.rs
-use codebase_memory::graph::boundaries::{BoundaryConfig, BoundaryRule, check_boundaries};
+use codebase_synapse::graph::boundaries::{BoundaryConfig, BoundaryRule, check_boundaries};
 
 fn make_config(from: &str, deny: &[&str]) -> BoundaryConfig {
     BoundaryConfig {
