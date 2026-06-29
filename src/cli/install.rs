@@ -1,9 +1,5 @@
-use std::fs;
-use std::path::{Path, PathBuf};
-
-use anyhow::{Context, Result};
-use inquire::{Confirm, MultiSelect};
-use serde_json::json;
+use anyhow::Result;
+use std::path::PathBuf;
 
 fn home_dir() -> PathBuf {
     std::env::var("HOME")
@@ -12,296 +8,80 @@ fn home_dir() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("."))
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Agent {
-    ClaudeCode,
-    OpenCode,
-    Cursor,
-    VSCode,
-    Zed,
-    GeminiCli,
-    Aider,
-    ContinueDev,
-}
-
-impl Agent {
-    fn name(&self) -> &'static str {
-        match self {
-            Agent::ClaudeCode => "Claude Code",
-            Agent::OpenCode => "OpenCode",
-            Agent::Cursor => "Cursor",
-            Agent::VSCode => "VS Code",
-            Agent::Zed => "Zed",
-            Agent::GeminiCli => "Gemini CLI",
-            Agent::Aider => "Aider",
-            Agent::ContinueDev => "Continue.dev",
-        }
-    }
-
-    fn config_paths(&self, home: &Path, project_dir: &Path) -> Vec<PathBuf> {
-        match self {
-            Agent::ClaudeCode => vec![home.join(".claude").join(".mcp.json")],
-            Agent::OpenCode => vec![
-                home.join(".config").join("opencode").join("mcp.json"),
-                project_dir.join(".opencode").join("mcp.json"),
-            ],
-            Agent::Cursor => vec![
-                project_dir.join(".cursor").join("mcp.json"),
-                home.join(".cursor").join("mcp.json"),
-            ],
-            Agent::VSCode => vec![project_dir.join(".vscode").join("mcp.json")],
-            Agent::Zed => vec![home.join(".config").join("zed").join("settings.json")],
-            Agent::GeminiCli => vec![home.join(".config").join("gemini").join("settings.json")],
-            Agent::Aider => vec![
-                project_dir.join(".aider.conf.yml"),
-                home.join(".aider.conf.yml"),
-            ],
-            Agent::ContinueDev => vec![
-                home.join(".continue").join("config.json"),
-                project_dir.join(".continue").join("config.json"),
-            ],
-        }
-    }
-
-    fn detected(&self, home: &Path, project_dir: &Path) -> bool {
-        self.config_paths(home, project_dir)
-            .iter()
-            .any(|p| p.exists())
-    }
-
-    fn mcp_config() -> serde_json::Value {
-        let cmd = if cfg!(windows) { "npx.cmd" } else { "npx" };
-        json!({
-            "command": cmd,
-            "args": ["-y", "codebase-synapse", "--project-root", "."]
-        })
-    }
-
-    fn write_config(&self, home: &Path, project_dir: &Path) -> Result<Option<PathBuf>> {
-        match self {
-            Agent::ClaudeCode => {
-                let dir = home.join(".claude");
-                let path = dir.join(".mcp.json");
-                fs::create_dir_all(&dir)?;
-                Self::merge_and_write(&path, "mcpServers", home, project_dir)
-            }
-            Agent::OpenCode => {
-                let paths = vec![
-                    home.join(".config").join("opencode").join("mcp.json"),
-                    project_dir.join(".opencode").join("mcp.json"),
-                ];
-                let mut last = None;
-                for path in &paths {
-                    if let Some(parent) = path.parent() {
-                        fs::create_dir_all(parent)?;
-                    }
-                    Self::merge_and_write(path, "mcp", home, project_dir)?;
-                    last = Some(path.clone());
-                }
-                Ok(last)
-            }
-            Agent::Cursor | Agent::VSCode => {
-                let paths = self.config_paths(home, project_dir);
-                let path = paths.into_iter().next().unwrap_or_else(|| {
-                    project_dir
-                        .join(match self {
-                            Agent::Cursor => ".cursor",
-                            _ => ".vscode",
-                        })
-                        .join("mcp.json")
-                });
-                if let Some(parent) = path.parent() {
-                    fs::create_dir_all(parent)?;
-                }
-                Self::merge_and_write(&path, "mcpServers", home, project_dir)
-            }
-            Agent::Zed => {
-                let path = home.join(".config").join("zed").join("settings.json");
-                let dir = path.parent().unwrap();
-                fs::create_dir_all(dir)?;
-                let mut cfg: serde_json::Value = if path.exists() {
-                    let content = fs::read_to_string(&path)?;
-                    serde_json::from_str(&content).unwrap_or(json!({}))
-                } else {
-                    json!({})
-                };
-                cfg["mcpServers"]["codebase-synapse"] = Self::mcp_config();
-                fs::write(&path, serde_json::to_string_pretty(&cfg)?)?;
-                Ok(Some(path))
-            }
-            Agent::GeminiCli => {
-                let path = home.join(".config").join("gemini").join("settings.json");
-                let dir = path.parent().unwrap();
-                fs::create_dir_all(dir)?;
-                let mut cfg: serde_json::Value = if path.exists() {
-                    let content = fs::read_to_string(&path)?;
-                    serde_json::from_str(&content).unwrap_or(json!({}))
-                } else {
-                    json!({})
-                };
-                cfg["mcpServers"]["codebase-synapse"] = Self::mcp_config();
-                fs::write(&path, serde_json::to_string_pretty(&cfg)?)?;
-                Ok(Some(path))
-            }
-            _ => Ok(None),
-        }
-    }
-
-    fn merge_and_write(
-        path: &Path,
-        key: &str,
-        _home: &Path,
-        _project_dir: &Path,
-    ) -> Result<Option<PathBuf>> {
-        let mut cfg: serde_json::Value = if path.exists() {
-            let content = fs::read_to_string(path)?;
-            serde_json::from_str(&content).unwrap_or_else(|_| json!({}))
-        } else {
-            json!({})
-        };
-        ObjectMerge(&mut cfg).set_nested(key, "codebase-synapse", Self::mcp_config());
-        fs::write(path, serde_json::to_string_pretty(&cfg)?)?;
-        Ok(Some(path.to_path_buf()))
-    }
-}
-
-static ALL_AGENTS: &[Agent] = &[
-    Agent::ClaudeCode,
-    Agent::OpenCode,
-    Agent::Cursor,
-    Agent::VSCode,
-    Agent::Zed,
-    Agent::GeminiCli,
-    Agent::Aider,
-    Agent::ContinueDev,
-];
-
 pub struct Installer;
 
 impl Installer {
-    pub fn run(dry_run: bool) -> Result<()> {
+    pub fn run(_dry_run: bool) -> Result<()> {
         let home = home_dir();
-        let project_dir = std::env::current_dir().context("Cannot determine current directory")?;
+        let project_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
-        println!();
-        println!("  🔍 codebase-synapse installer");
-        println!("  {}", project_dir.display());
-        println!();
-
-        // Detect which agents exist to set them as defaults
-        let mut defaults = Vec::new();
-        let mut detected_names = Vec::new();
-
-        for (i, agent) in ALL_AGENTS.iter().enumerate() {
-            if agent.detected(&home, &project_dir) {
-                defaults.push(i);
-                detected_names.push(agent.name());
-            }
-        }
-
-        if defaults.is_empty() {
-            println!("  ℹ No active AI agent configurations were auto-detected.");
-            println!("    (You can still select any agent below to create its config file)");
-            println!();
+        // Detect OS for custom config paths
+        let (claude_path, cursor_path, vscode_path, zed_path) = if cfg!(windows) {
+            (
+                home.join("AppData\\Roaming\\Claude\\claude_desktop_config.json"),
+                project_dir.join(".cursor\\mcp.json"),
+                project_dir.join(".vscode\\mcp.json"),
+                home.join(".config\\zed\\settings.json"),
+            )
+        } else if cfg!(target_os = "macos") {
+            (
+                home.join("Library/Application Support/Claude/claude_desktop_config.json"),
+                project_dir.join(".cursor/mcp.json"),
+                project_dir.join(".vscode/mcp.json"),
+                home.join(".config/zed/settings.json"),
+            )
         } else {
-            println!(
-                "  ℹ Auto-detected configurations for: {}",
-                detected_names.join(", ")
+            (
+                home.join(".config/Claude/claude_desktop_config.json"),
+                project_dir.join(".cursor/mcp.json"),
+                project_dir.join(".vscode/mcp.json"),
+                home.join(".config/zed/settings.json"),
             );
-            println!();
-        }
-
-        // Show all agents with multi-select
-        let selection = MultiSelect::new(
-            "  Select AI agents to configure with codebase-synapse:",
-            ALL_AGENTS.iter().map(|a| a.name()).collect(),
-        )
-        .with_default(&defaults)
-        .with_help_message("↑↓ move, Space toggle, Enter confirm")
-        .prompt();
-
-        let selected = match selection {
-            Ok(s) => {
-                let names: Vec<&str> = s.iter().map(|s| s.as_ref()).collect();
-                ALL_AGENTS
-                    .iter()
-                    .filter(|a| names.contains(&a.name()))
-                    .collect::<Vec<_>>()
-            }
-            Err(_) => {
-                println!("  Cancelled.");
-                return Ok(());
-            }
+            (
+                home.join(".config/Claude/claude_desktop_config.json"),
+                project_dir.join(".cursor/mcp.json"),
+                project_dir.join(".vscode/mcp.json"),
+                home.join(".config/zed/settings.json"),
+            )
         };
 
-        if selected.is_empty() {
-            println!("  No agents selected. Nothing to do.");
-            return Ok(());
-        }
+        let cmd = if cfg!(windows) { "npx.cmd" } else { "npx" };
 
         println!();
-        println!("  Selected:");
-        for agent in &selected {
-            println!("    ✓ {}", agent.name());
-        }
+        println!("  ⚙️  codebase-synapse - MCP Configuration Guide");
+        println!("  ============================================");
+        println!("  To use codebase-synapse as an MCP server, add it to your client config.");
         println!();
-
-        if dry_run {
-            println!("  Dry-run mode: no files were modified.");
-            return Ok(());
-        }
-
-        // Confirm if installing to project-level configs
-        let has_project_configs = selected
-            .iter()
-            .any(|a| matches!(a, Agent::OpenCode | Agent::Cursor | Agent::VSCode));
-        if has_project_configs {
-            let ok = Confirm::new(
-                "  Write project-level MCP configs? (will be added to version control)",
-            )
-            .with_default(false)
-            .prompt()
-            .unwrap_or(false);
-            if !ok {
-                println!("  Skipping project-level configs.");
-                return Ok(());
-            }
-        }
-
-        // Write configs
-        for agent in &selected {
-            match agent.write_config(&home, &project_dir) {
-                Ok(Some(path)) => println!("  ✓ {} → {}", agent.name(), path.display()),
-                Ok(None) => println!("  ✓ {} configured", agent.name()),
-                Err(e) => eprintln!("  ✗ {} failed: {}", agent.name(), e),
-            }
-        }
-
+        println!("  📋 MCP JSON Config block:");
+        println!("  --------------------------------------------");
+        println!("  {{");
+        println!("    \"mcpServers\": {{");
+        println!("      \"codebase-synapse\": {{");
+        println!("        \"command\": \"{}\",", cmd);
+        println!("        \"args\": [\"-y\", \"codebase-synapse\", \"--project-root\", \".\"]");
+        println!("      }}");
+        println!("    }}");
+        println!("  }}");
+        println!("  --------------------------------------------");
         println!();
-        println!("  Done! Restart your AI agent to use codebase-synapse.");
+        println!("  📁 Common configuration file paths for your OS:");
         println!();
-        println!("  Next steps:");
-        println!("    1. In your AI agent, say: \"Index this project\"");
-        println!("    2. Or run:  npx codebase-synapse --project-root .");
+        println!("    • Claude Desktop:");
+        println!("      👉 {}", claude_path.display());
         println!();
-        println!("  Manual MCP config (for other agents):");
-        println!("  {{\n    \"mcpServers\": {{\n      \"codebase-synapse\": {{\n        \"command\": \"npx\",\n        \"args\": [\"-y\", \"codebase-synapse\", \"--project-root\", \".\"]\n      }}\n    }}\n  }}");
+        println!("    • Cursor (Project level):");
+        println!("      👉 {}", cursor_path.display());
+        println!();
+        println!("    • VS Code (with Claude Dev/Continue):");
+        println!("      👉 {}", vscode_path.display());
+        println!();
+        println!("    • Zed:");
+        println!("      👉 {}", zed_path.display());
+        println!();
+        println!("  💡 Pro-Tip: Make sure you have Node.js (v18+) installed.");
+        println!("  Once added, restart your AI agent to begin indexing your codebase!");
+        println!();
 
         Ok(())
-    }
-}
-
-// Helper: set a nested key in a JSON object (e.g. "mcpServers" → "mcpServers.codebase-synapse")
-struct ObjectMerge<'a>(pub &'a mut serde_json::Value);
-
-impl ObjectMerge<'_> {
-    fn set_nested(&mut self, parent: &str, child: &str, value: serde_json::Value) {
-        let obj = self.0.as_object_mut().expect("expected object");
-        let entry = obj.entry(parent.to_string()).or_insert_with(|| json!({}));
-        if let serde_json::Value::Object(ref mut map) = entry {
-            map.insert(child.to_string(), value);
-        } else {
-            *entry = json!({child: value});
-        }
     }
 }
