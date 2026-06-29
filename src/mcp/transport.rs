@@ -57,14 +57,23 @@ impl McpTransport {
         let message: McpMessage = match serde_json::from_str(line) {
             Ok(m) => m,
             Err(e) => {
-                warn!("Failed to parse message: {} (raw: {})", e, &line[..line.len().min(200)]);
+                warn!(
+                    "Failed to parse message: {} (raw: {})",
+                    e,
+                    &line[..line.len().min(200)]
+                );
                 let err_msg = McpMessage::error(0, McpError::parse_error());
                 return Ok(Some(serde_json::to_string(&err_msg)?));
             }
         };
 
         match message {
-            McpMessage::Request { jsonrpc: _, id, method, params } => {
+            McpMessage::Request {
+                jsonrpc: _,
+                id,
+                method,
+                params,
+            } => {
                 let response = self.handle_request(id, &method, params);
                 let output = serde_json::to_string(&response)?;
                 Ok(Some(output))
@@ -118,16 +127,22 @@ impl McpTransport {
                 }
 
                 match self.registry.handle(tool_name, tool_params) {
-                    Ok(result) => McpMessage::success(id, json!({ "content": [{
-                        "type": "text",
-                        "text": serde_json::to_string_pretty(&result).unwrap_or_default()
-                    }]})),
+                    Ok(result) => McpMessage::success(
+                        id,
+                        json!({ "content": [{
+                            "type": "text",
+                            "text": serde_json::to_string_pretty(&result).unwrap_or_default()
+                        }]}),
+                    ),
                     Err(e) => {
                         warn!("Tool '{}' error: {}", tool_name, e);
-                        McpMessage::success(id, json!({ "content": [{
+                        McpMessage::success(
+                            id,
+                            json!({ "content": [{
                             "type": "text",
                             "text": format!("Error: {}", e)
-                        }], "isError": true }))
+                        }], "isError": true }),
+                        )
                     }
                 }
             }

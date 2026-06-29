@@ -50,7 +50,9 @@ impl DecayScorer {
     }
 
     pub fn prune_below(&mut self, threshold: f64) {
-        let keys: Vec<String> = self.entries.iter()
+        let keys: Vec<String> = self
+            .entries
+            .iter()
             .filter(|e| self.score(&e.key) < threshold)
             .map(|e| e.key.clone())
             .collect();

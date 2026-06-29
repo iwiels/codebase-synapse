@@ -1,15 +1,14 @@
 use anyhow::Result;
 use rusqlite::Connection;
-use std::collections::HashMap;
 use serde_json::json;
+use std::collections::HashMap;
 
 use crate::db::queries;
 
 pub fn get_project_architecture(conn: &Connection, project_id: i64) -> Result<serde_json::Value> {
     // 1. Languages
-    let mut stmt = conn.prepare(
-        "SELECT file_path FROM nodes WHERE project_id = ?1 AND kind = 'file'"
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT file_path FROM nodes WHERE project_id = ?1 AND kind = 'file'")?;
     let mut lang_counts: HashMap<String, usize> = HashMap::new();
     let rows = stmt.query_map(rusqlite::params![project_id], |row| {
         let path: String = row.get(0)?;
@@ -40,9 +39,8 @@ pub fn get_project_architecture(conn: &Connection, project_id: i64) -> Result<se
     }
 
     // 2. Packages (extracted from manifests)
-    let mut stmt = conn.prepare(
-        "SELECT name, metadata FROM nodes WHERE project_id = ?1 AND kind = 'manifest'"
-    )?;
+    let mut stmt = conn
+        .prepare("SELECT name, metadata FROM nodes WHERE project_id = ?1 AND kind = 'manifest'")?;
     let mut packages = Vec::new();
     let rows = stmt.query_map(rusqlite::params![project_id], |row| {
         let name: String = row.get(0)?;
@@ -53,7 +51,11 @@ pub fn get_project_architecture(conn: &Connection, project_id: i64) -> Result<se
         let (name, metadata) = r?;
         let pkg_name = metadata
             .and_then(|m| serde_json::from_str::<serde_json::Value>(&m).ok())
-            .and_then(|json| json.get("package_name").and_then(|n| n.as_str()).map(|s| s.to_string()))
+            .and_then(|json| {
+                json.get("package_name")
+                    .and_then(|n| n.as_str())
+                    .map(|s| s.to_string())
+            })
             .unwrap_or(name);
         packages.push(pkg_name);
     }
@@ -69,7 +71,7 @@ pub fn get_project_architecture(conn: &Connection, project_id: i64) -> Result<se
              file_path LIKE '%/app.py' OR
              file_path LIKE '%/server.ts' OR
              file_path LIKE '%/server.js'
-         )"
+         )",
     )?;
     let mut entry_points = Vec::new();
     let rows = stmt.query_map(rusqlite::params![project_id], |row| {
@@ -82,12 +84,15 @@ pub fn get_project_architecture(conn: &Connection, project_id: i64) -> Result<se
 
     // 4. Routes Map
     let route_map = queries::get_route_map(conn, project_id)?;
-    let routes_json: Vec<serde_json::Value> = route_map.into_iter().map(|(r, h)| {
-        json!({
-            "route": r,
-            "handler": h
+    let routes_json: Vec<serde_json::Value> = route_map
+        .into_iter()
+        .map(|(r, h)| {
+            json!({
+                "route": r,
+                "handler": h
+            })
         })
-    }).collect();
+        .collect();
 
     // 5. Hotspots (Files with highest cumulative complexity or churn)
     let mut stmt = conn.prepare(
@@ -96,7 +101,7 @@ pub fn get_project_architecture(conn: &Connection, project_id: i64) -> Result<se
          WHERE project_id = ?1 AND complexity IS NOT NULL
          GROUP BY file_path
          ORDER BY total_complexity DESC
-         LIMIT 5"
+         LIMIT 5",
     )?;
     let mut hotspots = Vec::new();
     let rows = stmt.query_map(rusqlite::params![project_id], |row| {
@@ -118,9 +123,8 @@ pub fn get_project_architecture(conn: &Connection, project_id: i64) -> Result<se
     let dead_code_count = dead_code.len();
 
     // 7. Test Coverage status (files with tests vs files without)
-    let mut stmt = conn.prepare(
-        "SELECT file_path FROM nodes WHERE project_id = ?1 AND kind = 'file'"
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT file_path FROM nodes WHERE project_id = ?1 AND kind = 'file'")?;
     let rows = stmt.query_map(rusqlite::params![project_id], |row| {
         let path: String = row.get(0)?;
         Ok(path)

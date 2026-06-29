@@ -1,6 +1,6 @@
-use std::collections::HashSet;
 use crate::db::schema::Node;
 use crate::similarity::estimate_similarity;
+use std::collections::HashSet;
 
 /// Compute Jaccard overlap of code tokens (words).
 pub fn token_overlap(code_a: &str, code_b: &str) -> f64 {
@@ -17,7 +17,7 @@ pub fn token_overlap(code_a: &str, code_b: &str) -> f64 {
     if tokens_a.is_empty() && tokens_b.is_empty() {
         return 1.0;
     }
-    
+
     let intersection = tokens_a.intersection(&tokens_b).count();
     let union = tokens_a.union(&tokens_b).count();
     intersection as f64 / union as f64
@@ -50,7 +50,13 @@ pub fn ast_profile_similarity(node_a: &Node, node_b: &Node) -> f64 {
     // 1. Line count similarity
     let lines_a = (node_a.end_line - node_a.start_line).max(1) as f64;
     let lines_b = (node_b.end_line - node_b.start_line).max(1) as f64;
-    let line_sim = 1.0 - (lines_a - lines_b).abs() / std::cmp::max(node_a.end_line - node_a.start_line, node_b.end_line - node_b.start_line).max(1) as f64;
+    let line_sim = 1.0
+        - (lines_a - lines_b).abs()
+            / std::cmp::max(
+                node_a.end_line - node_a.start_line,
+                node_b.end_line - node_b.start_line,
+            )
+            .max(1) as f64;
 
     // 2. Complexity similarity
     let comp_a = node_a.complexity.unwrap_or(1) as f64;
@@ -58,7 +64,11 @@ pub fn ast_profile_similarity(node_a: &Node, node_b: &Node) -> f64 {
     let comp_sim = 1.0 - (comp_a - comp_b).abs() / comp_a.max(comp_b).max(1.0);
 
     // 3. Export matching
-    let export_sim = if node_a.is_exported == node_b.is_exported { 1.0 } else { 0.5 };
+    let export_sim = if node_a.is_exported == node_b.is_exported {
+        1.0
+    } else {
+        0.5
+    };
 
     (line_sim * 0.4) + (comp_sim * 0.4) + (export_sim * 0.2)
 }

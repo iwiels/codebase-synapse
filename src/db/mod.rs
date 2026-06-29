@@ -1,15 +1,15 @@
 //! SQLite database layer: schema (12 tables, FTS5, triggers), queries, and connection management.
 
-pub mod schema;
 pub mod queries;
+pub mod schema;
 
-use std::path::Path;
-use std::sync::Mutex;
 use anyhow::Result;
 use rusqlite::Connection;
+use std::path::Path;
+use std::sync::Mutex;
 
-pub use schema::NodeKind;
 pub use schema::EdgeKind;
+pub use schema::NodeKind;
 
 pub type SharedConnection = Mutex<Connection>;
 

@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use rusqlite::Connection;
 
 /// Export the SQLite database as a compressed artifact.
@@ -19,8 +19,8 @@ pub fn export_graph(conn: &Connection, output_path: Option<&str>) -> Result<Path
     conn.execute_batch(&format!("VACUUM INTO '{}'", db_path))?;
 
     let data = fs::read(&temp_db)?;
-    let compressed = zstd::encode_all(std::io::Cursor::new(data), 9)
-        .context("Failed to compress with zstd")?;
+    let compressed =
+        zstd::encode_all(std::io::Cursor::new(data), 9).context("Failed to compress with zstd")?;
 
     fs::write(&out, &compressed)?;
 
@@ -55,7 +55,8 @@ pub fn import_graph(path: &str) -> Result<PathBuf> {
     drop(conn);
 
     // Determine output path: strip .zst, add .db if needed
-    let out_name = src.file_stem()
+    let out_name = src
+        .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("imported-graph");
     let out_path = if out_name.ends_with(".db") {
@@ -68,7 +69,11 @@ pub fn import_graph(path: &str) -> Result<PathBuf> {
     let _ = fs::remove_dir_all(&temp_dir);
 
     let size_mb = decompressed.len() as f64 / 1_048_576.0;
-    println!("  ✓ Import complete: {} ({:.1} MB)", out_path.display(), size_mb);
+    println!(
+        "  ✓ Import complete: {} ({:.1} MB)",
+        out_path.display(),
+        size_mb
+    );
 
     Ok(out_path)
 }

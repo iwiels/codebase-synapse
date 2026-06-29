@@ -30,7 +30,10 @@ pub fn create_embedder() -> Arc<dyn Embedder> {
         match CandleEmbedder::new() {
             Ok(emb) => return Arc::new(emb),
             Err(e) => {
-                tracing::warn!("Failed to initialize Candle embedder ({}), falling back to noop", e);
+                tracing::warn!(
+                    "Failed to initialize Candle embedder ({}), falling back to noop",
+                    e
+                );
             }
         }
     }

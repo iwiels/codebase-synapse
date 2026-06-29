@@ -70,7 +70,10 @@ pub fn list_projects(conn: &Connection) -> Result<Vec<Project>> {
 }
 
 pub fn delete_project(conn: &Connection, project_id: i64) -> Result<()> {
-    conn.execute("DELETE FROM nodes WHERE project_id = ?1", params![project_id])?;
+    conn.execute(
+        "DELETE FROM nodes WHERE project_id = ?1",
+        params![project_id],
+    )?;
     conn.execute("DELETE FROM projects WHERE id = ?1", params![project_id])?;
     Ok(())
 }
@@ -162,7 +165,14 @@ pub fn search_nodes_by_name(
          LIMIT ?5 OFFSET ?6",
     )?;
     let rows = stmt.query_map(
-        params![project_id, like_pattern, pattern, format!("{}%", pattern), limit, offset],
+        params![
+            project_id,
+            like_pattern,
+            pattern,
+            format!("{}%", pattern),
+            limit,
+            offset
+        ],
         row_to_node,
     )?;
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -217,7 +227,11 @@ pub fn get_all_nodes(conn: &Connection, project_id: i64) -> Result<Vec<Node>> {
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
 }
 
-pub fn get_file_structure(conn: &Connection, project_id: i64, file_path: &str) -> Result<Vec<Node>> {
+pub fn get_file_structure(
+    conn: &Connection,
+    project_id: i64,
+    file_path: &str,
+) -> Result<Vec<Node>> {
     // Try exact match first, then suffix match (handles both absolute and relative paths)
     let nodes = get_nodes_by_file(conn, project_id, file_path)?;
     if !nodes.is_empty() {
@@ -343,12 +357,7 @@ pub fn get_call_graph(
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
 }
 
-pub fn find_path(
-    conn: &Connection,
-    from_id: i64,
-    to_id: i64,
-    max_depth: i64,
-) -> Result<Vec<Edge>> {
+pub fn find_path(conn: &Connection, from_id: i64, to_id: i64, max_depth: i64) -> Result<Vec<Edge>> {
     let sql = "
         WITH RECURSIVE path AS (
             SELECT e.id, e.source_node_id, e.target_node_id, e.kind, e.metadata, e.created_at,
@@ -444,7 +453,11 @@ pub fn search_memory_notes(
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
 }
 
-pub fn list_memory_notes(conn: &Connection, project_id: i64, kind: Option<&str>) -> Result<Vec<MemoryNote>> {
+pub fn list_memory_notes(
+    conn: &Connection,
+    project_id: i64,
+    kind: Option<&str>,
+) -> Result<Vec<MemoryNote>> {
     let (sql, params_vec): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match kind {
         Some(k) => (
             "SELECT id, project_id, content, node_id, kind, tags, access_count, last_accessed, created_at, updated_at
@@ -460,7 +473,8 @@ pub fn list_memory_notes(conn: &Connection, project_id: i64, kind: Option<&str>)
         ),
     };
     let mut stmt = conn.prepare(&sql)?;
-    let params_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        params_vec.iter().map(|p| p.as_ref()).collect();
     let rows = stmt.query_map(params_refs.as_slice(), |row| {
         Ok(MemoryNote {
             id: row.get(0)?,
@@ -489,9 +503,8 @@ pub fn get_all_file_states(
     conn: &Connection,
     project_id: i64,
 ) -> Result<std::collections::HashMap<String, String>> {
-    let mut stmt = conn.prepare(
-        "SELECT file_path, content_hash FROM file_states WHERE project_id = ?1",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT file_path, content_hash FROM file_states WHERE project_id = ?1")?;
     let rows = stmt.query_map(params![project_id], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
     })?;
@@ -508,9 +521,8 @@ pub fn get_file_state_hash(
     project_id: i64,
     file_path: &str,
 ) -> Result<Option<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT content_hash FROM file_states WHERE project_id = ?1 AND file_path = ?2",
-    )?;
+    let mut stmt = conn
+        .prepare("SELECT content_hash FROM file_states WHERE project_id = ?1 AND file_path = ?2")?;
     let mut rows = stmt.query(params![project_id, file_path])?;
     match rows.next()? {
         Some(row) => Ok(Some(row.get(0)?)),
@@ -548,10 +560,7 @@ pub fn upsert_embedding(
     embedding: &[f32],
     model: &str,
 ) -> Result<()> {
-    let bytes: Vec<u8> = embedding
-        .iter()
-        .flat_map(|f| f.to_le_bytes())
-        .collect();
+    let bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
     conn.execute(
         "INSERT OR REPLACE INTO embeddings (node_id, embedding, model, dimensions)
          VALUES (?1, ?2, ?3, ?4)",
@@ -561,9 +570,8 @@ pub fn upsert_embedding(
 }
 
 pub fn get_embedding(conn: &Connection, node_id: i64) -> Result<Option<Vec<f32>>> {
-    let mut stmt = conn.prepare(
-        "SELECT embedding, dimensions FROM embeddings WHERE node_id = ?1",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT embedding, dimensions FROM embeddings WHERE node_id = ?1")?;
     let mut rows = stmt.query(params![node_id])?;
     match rows.next()? {
         Some(row) => {
@@ -584,7 +592,7 @@ pub fn get_all_embeddings(conn: &Connection, project_id: i64) -> Result<Vec<(i64
         "SELECT e.node_id, e.embedding, e.dimensions
          FROM embeddings e
          JOIN nodes n ON n.id = e.node_id
-         WHERE n.project_id = ?1"
+         WHERE n.project_id = ?1",
     )?;
     let rows = stmt.query_map(params![project_id], |row| {
         let node_id: i64 = row.get(0)?;
@@ -700,20 +708,20 @@ pub fn get_route_map(conn: &Connection, project_id: i64) -> Result<Vec<(Node, Op
          WHERE r.project_id = ?1 AND r.kind = 'route'
          ORDER BY r.name"
     )?;
-    
+
     let rows = stmt.query_map(params![project_id], |row| {
         let route = row_to_node_offset(row, 0)?;
-        
+
         let has_handler = row.get::<_, Option<i64>>(17)?.is_some();
         let handler = if has_handler {
             Some(row_to_node_offset(row, 17)?)
         } else {
             None
         };
-        
+
         Ok((route, handler))
     })?;
-    
+
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
 }
 
@@ -808,7 +816,7 @@ pub fn get_recent_semantic_changes(
          FROM semantic_changes
          WHERE project_id = ?1
            AND changed_at >= datetime('now', printf('-%d hours', ?2))
-         ORDER BY changed_at DESC LIMIT 200"
+         ORDER BY changed_at DESC LIMIT 200",
     )?;
     let rows = stmt.query_map(params![project_id, hours], |row| {
         Ok(crate::db::schema::SemanticChange {
@@ -838,11 +846,7 @@ pub fn record_node_access(conn: &Connection, node_id: i64, project_id: i64) -> R
     Ok(())
 }
 
-pub fn get_working_set(
-    conn: &Connection,
-    project_id: i64,
-    limit: i64,
-) -> Result<Vec<(Node, i64)>> {
+pub fn get_working_set(conn: &Connection, project_id: i64, limit: i64) -> Result<Vec<(Node, i64)>> {
     let mut stmt = conn.prepare(
         "SELECT n.id, n.project_id, n.file_path, n.kind, n.name, n.qualified_name, n.signature,
                 n.doc_comment, n.start_line, n.end_line, n.complexity, n.is_exported, n.content_hash,
@@ -875,7 +879,7 @@ pub fn find_cross_project_symbol(conn: &Connection, symbol_name: &str) -> Result
                 source, metadata, created_at, updated_at
          FROM nodes
          WHERE name = ?1 OR qualified_name LIKE ?2
-         ORDER BY project_id, name"
+         ORDER BY project_id, name",
     )?;
     let rows = stmt.query_map(params![symbol_name, pattern], row_to_node)?;
     rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
@@ -887,7 +891,14 @@ pub fn link_cross_project(
     source_node_id: i64,
     target_node_id: i64,
 ) -> Result<()> {
-    insert_edge(conn, project_id, source_node_id, target_node_id, "cross_project", None)
+    insert_edge(
+        conn,
+        project_id,
+        source_node_id,
+        target_node_id,
+        "cross_project",
+        None,
+    )
 }
 
 // ── Architecture Decision Records (ADRs) ──
@@ -1001,7 +1012,12 @@ pub fn get_all_node_ids(conn: &Connection, project_id: i64) -> Result<Vec<i64>> 
 }
 
 /// Upsert the PageRank score for a single node.
-pub fn update_node_pagerank(conn: &Connection, node_id: i64, project_id: i64, rank: f64) -> Result<()> {
+pub fn update_node_pagerank(
+    conn: &Connection,
+    node_id: i64,
+    project_id: i64,
+    rank: f64,
+) -> Result<()> {
     conn.execute(
         "INSERT INTO node_pagerank (node_id, project_id, pagerank, computed_at)
          VALUES (?1, ?2, ?3, datetime('now'))
@@ -1025,7 +1041,11 @@ pub fn get_node_pagerank(conn: &Connection, node_id: i64) -> Result<f64> {
 }
 
 /// Get top-N nodes by PageRank for a project.
-pub fn get_top_pagerank_nodes(conn: &Connection, project_id: i64, limit: i64) -> Result<Vec<(i64, f64)>> {
+pub fn get_top_pagerank_nodes(
+    conn: &Connection,
+    project_id: i64,
+    limit: i64,
+) -> Result<Vec<(i64, f64)>> {
     let mut stmt = conn.prepare(
         "SELECT node_id, pagerank FROM node_pagerank
          WHERE project_id = ?1
@@ -1038,14 +1058,17 @@ pub fn get_top_pagerank_nodes(conn: &Connection, project_id: i64, limit: i64) ->
 }
 
 /// Load previous PageRank scores for warm-start.
-pub fn get_prev_pageranks(conn: &Connection, project_id: i64) -> Result<std::collections::HashMap<i64, f64>> {
-    let mut stmt = conn.prepare(
-        "SELECT node_id, pagerank FROM node_pagerank WHERE project_id = ?1",
-    )?;
+pub fn get_prev_pageranks(
+    conn: &Connection,
+    project_id: i64,
+) -> Result<std::collections::HashMap<i64, f64>> {
+    let mut stmt =
+        conn.prepare("SELECT node_id, pagerank FROM node_pagerank WHERE project_id = ?1")?;
     let rows = stmt.query_map(params![project_id], |row| {
         Ok((row.get::<_, i64>(0)?, row.get::<_, f64>(1)?))
     })?;
-    rows.collect::<Result<std::collections::HashMap<_, _>, _>>().map_err(Into::into)
+    rows.collect::<Result<std::collections::HashMap<_, _>, _>>()
+        .map_err(Into::into)
 }
 
 #[cfg(test)]
@@ -1059,11 +1082,18 @@ mod tests {
         conn
     }
 
-    fn insert_test_node(conn: &Connection, project_id: i64, name: &str, kind: &str, file_path: &str) -> i64 {
+    fn insert_test_node(
+        conn: &Connection,
+        project_id: i64,
+        name: &str,
+        kind: &str,
+        file_path: &str,
+    ) -> i64 {
         conn.execute(
             "INSERT INTO nodes (project_id, file_path, kind, name) VALUES (?1, ?2, ?3, ?4)",
             params![project_id, file_path, kind, name],
-        ).unwrap();
+        )
+        .unwrap();
         conn.last_insert_rowid()
     }
 
@@ -1162,7 +1192,9 @@ mod tests {
         let conn = test_conn();
         let p = upsert_project(&conn, "p", "/p").unwrap();
         let store = crate::memory::MemoryStore::new(&conn);
-        let id = store.store(p.id, "important note", None, "note", None).unwrap();
+        let id = store
+            .store(p.id, "important note", None, "note", None)
+            .unwrap();
         assert!(id > 0);
 
         let results = store.search(p.id, "important", 10).unwrap();
@@ -1225,9 +1257,9 @@ mod tests {
         let n2 = insert_test_node(&conn, p.id, "b", "function", "b.rs");
         link_cross_project(&conn, p.id, n1, n2).unwrap();
         // Verify edge exists directly in DB
-        let mut stmt = conn.prepare(
-            "SELECT kind FROM edges WHERE source_node_id = ?1 AND target_node_id = ?2"
-        ).unwrap();
+        let mut stmt = conn
+            .prepare("SELECT kind FROM edges WHERE source_node_id = ?1 AND target_node_id = ?2")
+            .unwrap();
         let kind: String = stmt.query_row(params![n1, n2], |row| row.get(0)).unwrap();
         assert_eq!(kind, "cross_project");
     }

@@ -4,7 +4,10 @@ use std::collections::HashMap;
 
 #[test]
 fn test_render_wiki_contains_project_name() {
-    let cfg = WikiConfig { project_name: "my-app".into(), max_files_per_cluster: 10 };
+    let cfg = WikiConfig {
+        project_name: "my-app".into(),
+        max_files_per_cluster: 10,
+    };
     let clusters: HashMap<i64, Vec<String>> = HashMap::new();
     let md = render_wiki(&cfg, &clusters, &[], 0.0);
     assert!(md.contains("my-app"));
@@ -13,7 +16,10 @@ fn test_render_wiki_contains_project_name() {
 
 #[test]
 fn test_render_wiki_two_clusters_sorted() {
-    let cfg = WikiConfig { project_name: "app".into(), max_files_per_cluster: 10 };
+    let cfg = WikiConfig {
+        project_name: "app".into(),
+        max_files_per_cluster: 10,
+    };
     let mut clusters = HashMap::new();
     clusters.insert(1i64, vec!["src/api.rs".into()]);
     clusters.insert(2i64, vec!["src/db.rs".into()]);
@@ -25,7 +31,10 @@ fn test_render_wiki_two_clusters_sorted() {
 
 #[test]
 fn test_render_wiki_deterministic() {
-    let cfg = WikiConfig { project_name: "app".into(), max_files_per_cluster: 10 };
+    let cfg = WikiConfig {
+        project_name: "app".into(),
+        max_files_per_cluster: 10,
+    };
     let mut clusters = HashMap::new();
     clusters.insert(1i64, vec!["b.rs".into(), "a.rs".into()]);
     let md1 = render_wiki(&cfg, &clusters, &[], 0.5);

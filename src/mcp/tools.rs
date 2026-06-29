@@ -7,15 +7,15 @@ use serde_json::{json, Value};
 use tracing::info;
 
 use crate::config::Config;
+use crate::context::ContextBudget;
 use crate::db;
 use crate::db::schema::SearchResult;
 use crate::embedding::Embedder;
+use crate::git::{GitArchaeologist, HotspotAnalyzer};
 use crate::graph::{GraphTraversal, ImpactAnalysis};
 use crate::indexer::Indexer;
 use crate::memory::{MemoryStore, SessionMemory};
 use crate::search::{Bm25Search, HybridSearch};
-use crate::git::{GitArchaeologist, HotspotAnalyzer};
-use crate::context::ContextBudget;
 
 type ToolHandler = Arc<dyn Fn(Value) -> Result<Value> + Send + Sync>;
 type SharedConn = Arc<Mutex<Connection>>;
@@ -56,21 +56,37 @@ impl ToolRegistry {
         registry
     }
 
-    fn register(&mut self, name: &str, description: &str, input_schema: Value, handler: ToolHandler) {
-        self.tools.insert(name.to_string(), ToolDef {
-            name: name.to_string(),
-            description: description.to_string(),
-            input_schema,
-        });
+    fn register(
+        &mut self,
+        name: &str,
+        description: &str,
+        input_schema: Value,
+        handler: ToolHandler,
+    ) {
+        self.tools.insert(
+            name.to_string(),
+            ToolDef {
+                name: name.to_string(),
+                description: description.to_string(),
+                input_schema,
+            },
+        );
         self.handlers.insert(name.to_string(), handler);
     }
 
     fn conn<T, F: FnOnce(&Connection) -> Result<T>>(conn: &SharedConn, f: F) -> Result<T> {
-        let guard = conn.lock().map_err(|e| anyhow::anyhow!("DB lock poisoned: {}", e))?;
+        let guard = conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("DB lock poisoned: {}", e))?;
         f(&guard)
     }
 
-    fn register_index_tools(&mut self, conn: &SharedConn, _config: &Arc<Config>, indexer: &Arc<Indexer>) {
+    fn register_index_tools(
+        &mut self,
+        conn: &SharedConn,
+        _config: &Arc<Config>,
+        indexer: &Arc<Indexer>,
+    ) {
         let _c = conn.clone();
         let idx = indexer.clone();
         self.register(
@@ -104,7 +120,9 @@ impl ToolRegistry {
             "Delete an indexed project",
             json!({"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}),
             Arc::new(move |params| {
-                let name = params["name"].as_str().ok_or_else(|| anyhow::anyhow!("Missing name"))?;
+                let name = params["name"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Missing name"))?;
                 Self::conn(&c3, |conn| {
                     let project = db::queries::get_project(conn, name)?;
                     if let Some(p) = project {
@@ -396,14 +414,14 @@ impl ToolRegistry {
                          FROM edges e JOIN nodes n ON n.id = e.source_node_id
                          WHERE e.target_node_id = ?1 AND e.kind = 'similar_to'"
                     )?;
-                    
+
                     let rows = stmt.query_map(rusqlite::params![id], |row| {
                         let edge_metadata: Option<String> = row.get(5)?;
                         let score = edge_metadata
                             .and_then(|m| serde_json::from_str::<serde_json::Value>(&m).ok())
                             .and_then(|json| json.get("jaccard_score").and_then(|s| s.as_f64()))
                             .unwrap_or(0.0);
-                            
+
                         let node = Node {
                             id: row.get(6)?,
                             project_id: row.get(7)?,
@@ -423,10 +441,10 @@ impl ToolRegistry {
                             created_at: String::new(),
                             updated_at: String::new(),
                         };
-                        
+
                         Ok((node, score))
                     })?;
-                    
+
                     let mut results = Vec::new();
                     for r in rows {
                         let (node, score) = r?;
@@ -688,10 +706,14 @@ impl ToolRegistry {
             }),
         );
         let c4 = conn.clone();
-        self.register("memory_delete", "Delete a memory by ID",
+        self.register(
+            "memory_delete",
+            "Delete a memory by ID",
             json!({"type":"object","properties":{"id":{"type":"integer"}},"required":["id"]}),
             Arc::new(move |params| {
-                let id = params["id"].as_i64().ok_or_else(|| anyhow::anyhow!("Missing id"))?;
+                let id = params["id"]
+                    .as_i64()
+                    .ok_or_else(|| anyhow::anyhow!("Missing id"))?;
                 Self::conn(&c4, |conn| {
                     let store = MemoryStore::new(conn);
                     store.delete(id)?;
@@ -713,10 +735,14 @@ impl ToolRegistry {
             }),
         );
         let s3 = session.clone();
-        self.register("session_recall", "Recall a fact from the current session",
+        self.register(
+            "session_recall",
+            "Recall a fact from the current session",
             json!({"type":"object","properties":{"key":{"type":"string"}},"required":["key"]}),
             Arc::new(move |params| {
-                let key = params["key"].as_str().ok_or_else(|| anyhow::anyhow!("Missing key"))?;
+                let key = params["key"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Missing key"))?;
                 let entry = s3.lock().ok().and_then(|s| s.recall(key).cloned());
                 Ok(json!(entry))
             }),
@@ -763,16 +789,21 @@ impl ToolRegistry {
     fn register_utility_tools(&mut self, conn: &SharedConn, config: &Arc<Config>) {
         let _c = conn.clone();
         let cfg = config.clone();
-        self.register("get_status", "Get server health and index status",
+        self.register(
+            "get_status",
+            "Get server health and index status",
             json!({"type":"object","properties":{}}),
             Arc::new(move |_| {
-                let db_size = std::fs::metadata(cfg.db_path()).map(|m| m.len()).unwrap_or(0);
+                let db_size = std::fs::metadata(cfg.db_path())
+                    .map(|m| m.len())
+                    .unwrap_or(0);
                 let data_dir = &cfg.data_dir;
                 // Check if git history is indexed
                 let git_indexed = data_dir.join("git_history.db").exists()
                     || std::fs::read_dir(data_dir)
                         .map(|entries| {
-                            entries.filter_map(|e| e.ok())
+                            entries
+                                .filter_map(|e| e.ok())
                                 .any(|e| e.file_name().to_string_lossy().contains("git"))
                         })
                         .unwrap_or(false);
@@ -990,15 +1021,21 @@ impl ToolRegistry {
     }
 
     pub fn get_tool_definitions(&self) -> Vec<Value> {
-        self.tools.values().map(|t| json!({
-            "name": t.name,
-            "description": t.description,
-            "inputSchema": t.input_schema
-        })).collect()
+        self.tools
+            .values()
+            .map(|t| {
+                json!({
+                    "name": t.name,
+                    "description": t.description,
+                    "inputSchema": t.input_schema
+                })
+            })
+            .collect()
     }
 
     pub fn handle(&self, name: &str, params: Value) -> Result<Value> {
-        self.handlers.get(name)
+        self.handlers
+            .get(name)
             .ok_or_else(|| anyhow::anyhow!("Unknown tool: {}", name))?(params)
     }
 
@@ -1016,7 +1053,13 @@ mod tests {
     use super::*;
     use crate::db::schema::migrate;
 
-    fn test_registry() -> (ToolRegistry, SharedConn, Arc<Config>, Arc<Indexer>, Arc<dyn Embedder>) {
+    fn test_registry() -> (
+        ToolRegistry,
+        SharedConn,
+        Arc<Config>,
+        Arc<Indexer>,
+        Arc<dyn Embedder>,
+    ) {
         let conn = Arc::new(Mutex::new(Connection::open_in_memory().unwrap()));
         {
             let c = conn.lock().unwrap();
@@ -1031,7 +1074,12 @@ mod tests {
         });
         let indexer = Arc::new(Indexer::new(config.clone(), conn.clone()));
         let embedder = Arc::new(crate::embedding::NoopEmbedder);
-        let registry = ToolRegistry::new(conn.clone(), config.clone(), indexer.clone(), embedder.clone());
+        let registry = ToolRegistry::new(
+            conn.clone(),
+            config.clone(),
+            indexer.clone(),
+            embedder.clone(),
+        );
         (registry, conn, config, indexer, embedder)
     }
 
@@ -1039,7 +1087,11 @@ mod tests {
     fn test_tool_registry_creation() {
         let (registry, _, _, _, _) = test_registry();
         let defs = registry.get_tool_definitions();
-        assert!(defs.len() >= 20, "Expected at least 20 tools, got {}", defs.len());
+        assert!(
+            defs.len() >= 20,
+            "Expected at least 20 tools, got {}",
+            defs.len()
+        );
         let names: Vec<&str> = defs.iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(names.contains(&"index_repository"));
         assert!(names.contains(&"search_symbol"));

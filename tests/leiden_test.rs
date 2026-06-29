@@ -16,8 +16,18 @@ fn test_leiden_two_disconnected_cliques() {
     // Clique A: 1,2,3 fully connected. Clique B: 4,5,6 fully connected.
     let nodes = vec![1i64, 2, 3, 4, 5, 6];
     let edges = vec![
-        (1,2),(2,1),(1,3),(3,1),(2,3),(3,2),
-        (4,5),(5,4),(4,6),(6,4),(5,6),(6,5),
+        (1, 2),
+        (2, 1),
+        (1, 3),
+        (3, 1),
+        (2, 3),
+        (3, 2),
+        (4, 5),
+        (5, 4),
+        (4, 6),
+        (6, 4),
+        (5, 6),
+        (6, 5),
     ];
     let cfg = LeidenConfig::default();
     let (assignments, _) = leiden_raw(&nodes, &edges, &cfg);
@@ -33,7 +43,7 @@ fn test_leiden_two_disconnected_cliques() {
 #[test]
 fn test_leiden_deterministic() {
     let nodes = vec![1i64, 2, 3, 4, 5];
-    let edges = vec![(1,2),(2,3),(3,4),(4,5),(5,1),(1,3)];
+    let edges = vec![(1, 2), (2, 3), (3, 4), (4, 5), (5, 1), (1, 3)];
     let cfg = LeidenConfig::default();
     let (a1, m1) = leiden_raw(&nodes, &edges, &cfg);
     let (a2, m2) = leiden_raw(&nodes, &edges, &cfg);

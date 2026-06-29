@@ -4,7 +4,10 @@ use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 
 #[derive(Parser, Debug, Clone)]
-#[command(name = "codebase-synapse", about = "MCP server for codebase indexing & memory")]
+#[command(
+    name = "codebase-synapse",
+    about = "MCP server for codebase indexing & memory"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,

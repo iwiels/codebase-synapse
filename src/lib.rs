@@ -18,22 +18,22 @@
 //! - `semantic` — Multi-signal scoring (token overlap, directory proximity, AST profile)
 //! - `cli` — Interactive TUI installer and artifact export/import
 
-pub mod config;
-pub mod db;
-pub mod parser;
-pub mod graph;
-pub mod indexer;
-pub mod search;
-pub mod embedding;
-pub mod memory;
-pub mod mcp;
-pub mod util;
-pub mod git;
 pub mod access;
+pub mod config;
 pub mod context;
 pub mod cypher;
-pub mod similarity;
+pub mod db;
+pub mod embedding;
+pub mod git;
+pub mod graph;
+pub mod indexer;
+pub mod mcp;
+pub mod memory;
+pub mod parser;
+pub mod search;
 pub mod semantic;
+pub mod similarity;
+pub mod util;
 
 pub mod cli;
 

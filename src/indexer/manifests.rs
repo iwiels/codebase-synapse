@@ -1,15 +1,17 @@
+use crate::db::{self, schema::Node};
 use anyhow::Result;
 use regex::Regex;
 use rusqlite::Connection;
-use std::sync::LazyLock;
-use crate::db::{self, schema::Node};
 use serde_json::Value as JsonValue;
+use std::sync::LazyLock;
 use toml::Value as TomlValue;
 
 static MODULE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^module\s+(\S+)").unwrap());
 static REQUIRE_GO_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*(\S+)\s+(\S+)").unwrap());
-static REQUIRE_TXT_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*([a-zA-Z0-9_\-]+)\s*(?:[>=<~!]+(.*))?").unwrap());
-static REQUIRE_TXT_PIN_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^([a-zA-Z0-9_\-]+)\s*(?:[>=<~!]+(.*))?").unwrap());
+static REQUIRE_TXT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*([a-zA-Z0-9_\-]+)\s*(?:[>=<~!]+(.*))?").unwrap());
+static REQUIRE_TXT_PIN_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^([a-zA-Z0-9_\-]+)\s*(?:[>=<~!]+(.*))?").unwrap());
 
 pub fn is_manifest_file(file_path: &str) -> bool {
     let fp = file_path.to_lowercase().replace('\\', "/");
@@ -62,7 +64,11 @@ pub fn extract_and_insert_manifest(
                 for (dep, val) in deps {
                     let version = match val {
                         TomlValue::String(s) => s.clone(),
-                        TomlValue::Table(t) => t.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        TomlValue::Table(t) => t
+                            .get("version")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
                         _ => String::new(),
                     };
                     dependencies.push((dep.clone(), version));
@@ -73,7 +79,11 @@ pub fn extract_and_insert_manifest(
                 for (dep, val) in deps {
                     let version = match val {
                         TomlValue::String(s) => s.clone(),
-                        TomlValue::Table(t) => t.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        TomlValue::Table(t) => t
+                            .get("version")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string(),
                         _ => String::new(),
                     };
                     dependencies.push((dep.clone(), version));
@@ -123,7 +133,10 @@ pub fn extract_and_insert_manifest(
             }
             if let Some(cap) = REQUIRE_TXT_RE.captures(line) {
                 let dep = cap.get(1).unwrap().as_str().to_string();
-                let ver = cap.get(2).map(|v| v.as_str().trim().to_string()).unwrap_or_default();
+                let ver = cap
+                    .get(2)
+                    .map(|v| v.as_str().trim().to_string())
+                    .unwrap_or_default();
                 dependencies.push((dep, ver));
             }
         }
@@ -139,7 +152,10 @@ pub fn extract_and_insert_manifest(
                         if let Some(d_str) = d_val.as_str() {
                             if let Some(cap) = REQUIRE_TXT_PIN_RE.captures(d_str) {
                                 let dep = cap.get(1).unwrap().as_str().to_string();
-                                let ver = cap.get(2).map(|v| v.as_str().trim().to_string()).unwrap_or_default();
+                                let ver = cap
+                                    .get(2)
+                                    .map(|v| v.as_str().trim().to_string())
+                                    .unwrap_or_default();
                                 dependencies.push((dep, ver));
                             }
                         }
@@ -174,7 +190,14 @@ pub fn extract_and_insert_manifest(
     let manifest_node_id = db::queries::insert_node(conn, project_id, &manifest_node)?;
 
     // Link file containing manifest
-    db::queries::insert_edge(conn, project_id, file_node_id, manifest_node_id, "contains", None)?;
+    db::queries::insert_edge(
+        conn,
+        project_id,
+        file_node_id,
+        manifest_node_id,
+        "contains",
+        None,
+    )?;
 
     // Link dependencies
     for (dep_name, version) in dependencies {
@@ -200,7 +223,14 @@ pub fn extract_and_insert_manifest(
         };
 
         let lib_node_id = db::queries::insert_node(conn, project_id, &lib_node)?;
-        db::queries::insert_edge(conn, project_id, manifest_node_id, lib_node_id, "depends_on", None)?;
+        db::queries::insert_edge(
+            conn,
+            project_id,
+            manifest_node_id,
+            lib_node_id,
+            "depends_on",
+            None,
+        )?;
     }
 
     Ok(())

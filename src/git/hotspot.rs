@@ -1,13 +1,15 @@
+use crate::db::schema::HotspotEntry;
 use anyhow::Result;
 use rusqlite::params;
-use crate::db::schema::HotspotEntry;
 
 pub struct HotspotAnalyzer<'a> {
     conn: &'a rusqlite::Connection,
 }
 
 impl<'a> HotspotAnalyzer<'a> {
-    pub fn new(conn: &'a rusqlite::Connection) -> Self { Self { conn } }
+    pub fn new(conn: &'a rusqlite::Connection) -> Self {
+        Self { conn }
+    }
 
     fn compute_hotspot_score(complexity: i64, churn_count: i64) -> f64 {
         (complexity as f64) * (1.0 + (1.0 + churn_count as f64).ln())

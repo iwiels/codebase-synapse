@@ -1,7 +1,7 @@
-use std::collections::{HashMap, HashSet};
-use rusqlite::Connection;
 use anyhow::Result;
 use regex::Regex;
+use rusqlite::Connection;
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 use crate::db::{self, schema::Node};
@@ -16,11 +16,40 @@ fn get_call_re() -> &'static Regex {
 fn get_keywords() -> &'static HashSet<&'static str> {
     KEYWORDS.get_or_init(|| {
         [
-            "if", "while", "for", "switch", "catch", "match", "return", "let", "fn",
-            "function", "impl", "struct", "class", "interface", "using", "import",
-            "super", "this", "self", "assert", "println", "print", "expect", "unwrap",
-            "panic", "log", "debug", "info", "warn", "error"
-        ].iter().cloned().collect()
+            "if",
+            "while",
+            "for",
+            "switch",
+            "catch",
+            "match",
+            "return",
+            "let",
+            "fn",
+            "function",
+            "impl",
+            "struct",
+            "class",
+            "interface",
+            "using",
+            "import",
+            "super",
+            "this",
+            "self",
+            "assert",
+            "println",
+            "print",
+            "expect",
+            "unwrap",
+            "panic",
+            "log",
+            "debug",
+            "info",
+            "warn",
+            "error",
+        ]
+        .iter()
+        .cloned()
+        .collect()
     })
 }
 
@@ -106,7 +135,9 @@ pub fn resolve_project_calls(conn: &Connection, project_id: i64) -> Result<()> {
             let mut resolved_id = None;
 
             // Signal 1: Local file match (High priority)
-            if let Some(local_node) = func_by_file_name.get(&(source_node.file_path.clone(), target_name.clone())) {
+            if let Some(local_node) =
+                func_by_file_name.get(&(source_node.file_path.clone(), target_name.clone()))
+            {
                 resolved_id = Some(local_node.id);
             }
 

@@ -1,9 +1,9 @@
-use anyhow::Result;
-use rusqlite::Connection;
 use crate::db::{self, schema::Node};
-use std::sync::LazyLock;
+use anyhow::Result;
 use regex::Regex;
+use rusqlite::Connection;
 use serde_yaml::Value as YamlValue;
+use std::sync::LazyLock;
 
 static FROM_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^FROM\s+(\S+)").unwrap());
 static EXPOSE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^EXPOSE\s+(.+)").unwrap());
@@ -63,16 +63,26 @@ pub fn extract_and_insert_infra(
             is_exported: true,
             content_hash: None,
             source: None,
-            metadata: Some(serde_json::json!({
-                "base_image": base_image,
-                "exposed_ports": exposed_ports
-            }).to_string()),
+            metadata: Some(
+                serde_json::json!({
+                    "base_image": base_image,
+                    "exposed_ports": exposed_ports
+                })
+                .to_string(),
+            ),
             created_at: String::new(),
             updated_at: String::new(),
         };
 
         let docker_node_id = db::queries::insert_node(conn, project_id, &docker_node)?;
-        db::queries::insert_edge(conn, project_id, file_node_id, docker_node_id, "contains", None)?;
+        db::queries::insert_edge(
+            conn,
+            project_id,
+            file_node_id,
+            docker_node_id,
+            "contains",
+            None,
+        )?;
 
         if !base_image.is_empty() {
             let img_qn = format!("__docker_image__{}", base_image);
@@ -97,7 +107,14 @@ pub fn extract_and_insert_infra(
             };
 
             let img_node_id = db::queries::insert_node(conn, project_id, &img_node)?;
-            db::queries::insert_edge(conn, project_id, docker_node_id, img_node_id, "derived_from", None)?;
+            db::queries::insert_edge(
+                conn,
+                project_id,
+                docker_node_id,
+                img_node_id,
+                "derived_from",
+                None,
+            )?;
         }
     } else if filename.ends_with(".yaml") || filename.ends_with(".yml") {
         // Multi-document YAML support
@@ -113,7 +130,9 @@ pub fn extract_and_insert_infra(
                 let kind = yaml.get("kind").and_then(|v| v.as_str());
                 let metadata = yaml.get("metadata").and_then(|v| v.as_mapping());
 
-                if let (Some(api_version), Some(k8s_kind), Some(metadata)) = (api_version, kind, metadata) {
+                if let (Some(api_version), Some(k8s_kind), Some(metadata)) =
+                    (api_version, kind, metadata)
+                {
                     let k8s_kind = k8s_kind.to_string();
                     let k8s_name = metadata
                         .get(YamlValue::String("name".to_string()))
@@ -141,18 +160,28 @@ pub fn extract_and_insert_infra(
                         is_exported: true,
                         content_hash: None,
                         source: None,
-                        metadata: Some(serde_json::json!({
-                            "apiVersion": api_version,
-                            "resource_kind": k8s_kind,
-                            "resource_name": k8s_name,
-                            "container_images": images
-                        }).to_string()),
+                        metadata: Some(
+                            serde_json::json!({
+                                "apiVersion": api_version,
+                                "resource_kind": k8s_kind,
+                                "resource_name": k8s_name,
+                                "container_images": images
+                            })
+                            .to_string(),
+                        ),
                         created_at: String::new(),
                         updated_at: String::new(),
                     };
 
                     let k8s_node_id = db::queries::insert_node(conn, project_id, &k8s_node)?;
-                    db::queries::insert_edge(conn, project_id, file_node_id, k8s_node_id, "contains", None)?;
+                    db::queries::insert_edge(
+                        conn,
+                        project_id,
+                        file_node_id,
+                        k8s_node_id,
+                        "contains",
+                        None,
+                    )?;
 
                     for img in images {
                         let img_qn = format!("__docker_image__{}", img);
@@ -177,7 +206,14 @@ pub fn extract_and_insert_infra(
                         };
 
                         let img_node_id = db::queries::insert_node(conn, project_id, &img_node)?;
-                        db::queries::insert_edge(conn, project_id, k8s_node_id, img_node_id, "deploys_image", None)?;
+                        db::queries::insert_edge(
+                            conn,
+                            project_id,
+                            k8s_node_id,
+                            img_node_id,
+                            "deploys_image",
+                            None,
+                        )?;
                     }
                 }
             }

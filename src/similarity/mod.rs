@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
-use rusqlite::Connection;
 use anyhow::Result;
+use rusqlite::Connection;
+use std::collections::{HashMap, HashSet};
 use xxhash_rust::xxh3::xxh3_64_with_seed;
 
 use crate::db::schema::Node;
@@ -39,7 +39,7 @@ pub fn compute_minhash(text: &str) -> Vec<u64> {
     // 3-char shingling
     for i in 0..=(chars.len() - 3) {
         let shingle: String = chars[i..(i + 3)].iter().collect();
-        
+
         // Compute minhash for 100 seeds
         for (seed, sig) in signature.iter_mut().enumerate().take(MINHASH_SIZE) {
             let hash = xxh3_64_with_seed(shingle.as_bytes(), seed as u64);
@@ -95,7 +95,7 @@ impl LshIndex {
             let start = band * LSH_ROWS;
             let end = start + LSH_ROWS;
             let band_data = &signature[start..end];
-            
+
             // Hash the band rows together
             let mut bytes = Vec::with_capacity(LSH_ROWS * 8);
             for &val in band_data {
@@ -120,7 +120,7 @@ impl LshIndex {
             let start = band * LSH_ROWS;
             let end = start + LSH_ROWS;
             let band_data = &signature[start..end];
-            
+
             let mut bytes = Vec::with_capacity(LSH_ROWS * 8);
             for &val in band_data {
                 bytes.extend_from_slice(&val.to_le_bytes());
@@ -150,7 +150,7 @@ pub fn find_similar_pairs(
          FROM nodes
          WHERE project_id = ?1 AND kind IN ('function', 'method') AND source IS NOT NULL"
     )?;
-    
+
     let rows = stmt.query_map(rusqlite::params![project_id], |row| {
         Ok(Node {
             id: row.get(0)?,
@@ -260,7 +260,15 @@ mod tests {
         let sim12 = estimate_similarity(&sig1, &sig2);
         let sim13 = estimate_similarity(&sig1, &sig3);
 
-        assert!(sim12 > 0.50, "Renaming variables and formatting should yield high similarity, got {}", sim12);
-        assert!(sim13 < 0.20, "Different operations should yield lower similarity, got {}", sim13);
+        assert!(
+            sim12 > 0.50,
+            "Renaming variables and formatting should yield high similarity, got {}",
+            sim12
+        );
+        assert!(
+            sim13 < 0.20,
+            "Different operations should yield lower similarity, got {}",
+            sim13
+        );
     }
 }

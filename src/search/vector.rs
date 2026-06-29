@@ -1,8 +1,8 @@
 use anyhow::Result;
 use rusqlite::Connection;
 
-use crate::db::schema::SearchResult;
 use crate::db::queries;
+use crate::db::schema::SearchResult;
 
 pub struct VectorSearch<'a> {
     conn: &'a Connection,
@@ -11,10 +11,18 @@ pub struct VectorSearch<'a> {
 
 impl<'a> VectorSearch<'a> {
     pub fn new(conn: &'a Connection) -> Self {
-        Self { conn, _model_dim: 384 }
+        Self {
+            conn,
+            _model_dim: 384,
+        }
     }
 
-    pub fn search(&self, project_id: i64, query_embedding: &[f32], limit: usize) -> Result<Vec<SearchResult>> {
+    pub fn search(
+        &self,
+        project_id: i64,
+        query_embedding: &[f32],
+        limit: usize,
+    ) -> Result<Vec<SearchResult>> {
         let all = queries::get_all_embeddings(self.conn, project_id)?;
         if all.is_empty() {
             return Ok(vec![]);
@@ -43,7 +51,11 @@ impl<'a> VectorSearch<'a> {
                 } else {
                     snippet
                 };
-                results.push(SearchResult { node, score, snippet });
+                results.push(SearchResult {
+                    node,
+                    score,
+                    snippet,
+                });
             }
         }
 

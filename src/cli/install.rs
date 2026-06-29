@@ -1,8 +1,8 @@
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 
-use anyhow::{Result, Context};
-use inquire::{MultiSelect, Confirm};
+use anyhow::{Context, Result};
+use inquire::{Confirm, MultiSelect};
 use serde_json::json;
 
 fn home_dir() -> PathBuf {
@@ -40,9 +40,7 @@ impl Agent {
 
     fn config_paths(&self, home: &Path, project_dir: &Path) -> Vec<PathBuf> {
         match self {
-            Agent::ClaudeCode => vec![
-                home.join(".claude").join(".mcp.json"),
-            ],
+            Agent::ClaudeCode => vec![home.join(".claude").join(".mcp.json")],
             Agent::OpenCode => vec![
                 home.join(".config").join("opencode").join("mcp.json"),
                 project_dir.join(".opencode").join("mcp.json"),
@@ -51,15 +49,9 @@ impl Agent {
                 project_dir.join(".cursor").join("mcp.json"),
                 home.join(".cursor").join("mcp.json"),
             ],
-            Agent::VSCode => vec![
-                project_dir.join(".vscode").join("mcp.json"),
-            ],
-            Agent::Zed => vec![
-                home.join(".config").join("zed").join("settings.json"),
-            ],
-            Agent::GeminiCli => vec![
-                home.join(".config").join("gemini").join("settings.json"),
-            ],
+            Agent::VSCode => vec![project_dir.join(".vscode").join("mcp.json")],
+            Agent::Zed => vec![home.join(".config").join("zed").join("settings.json")],
+            Agent::GeminiCli => vec![home.join(".config").join("gemini").join("settings.json")],
             Agent::Aider => vec![
                 project_dir.join(".aider.conf.yml"),
                 home.join(".aider.conf.yml"),
@@ -72,7 +64,9 @@ impl Agent {
     }
 
     fn detected(&self, home: &Path, project_dir: &Path) -> bool {
-        self.config_paths(home, project_dir).iter().any(|p| p.exists())
+        self.config_paths(home, project_dir)
+            .iter()
+            .any(|p| p.exists())
     }
 
     fn mcp_config() -> serde_json::Value {
@@ -109,10 +103,12 @@ impl Agent {
             Agent::Cursor | Agent::VSCode => {
                 let paths = self.config_paths(home, project_dir);
                 let path = paths.into_iter().next().unwrap_or_else(|| {
-                    project_dir.join(match self {
-                        Agent::Cursor => ".cursor",
-                        _ => ".vscode",
-                    }).join("mcp.json")
+                    project_dir
+                        .join(match self {
+                            Agent::Cursor => ".cursor",
+                            _ => ".vscode",
+                        })
+                        .join("mcp.json")
                 });
                 if let Some(parent) = path.parent() {
                     fs::create_dir_all(parent)?;
@@ -151,7 +147,12 @@ impl Agent {
         }
     }
 
-    fn merge_and_write(path: &Path, key: &str, _home: &Path, _project_dir: &Path) -> Result<Option<PathBuf>> {
+    fn merge_and_write(
+        path: &Path,
+        key: &str,
+        _home: &Path,
+        _project_dir: &Path,
+    ) -> Result<Option<PathBuf>> {
         let mut cfg: serde_json::Value = if path.exists() {
             let content = fs::read_to_string(path)?;
             serde_json::from_str(&content).unwrap_or_else(|_| json!({}))
@@ -206,7 +207,8 @@ impl Installer {
             println!();
             for agent in not_detected {
                 let paths = agent.config_paths(&home, &project_dir);
-                let path_str = paths.iter()
+                let path_str = paths
+                    .iter()
                     .map(|p| p.display().to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
@@ -235,7 +237,10 @@ impl Installer {
         let selected = match selection {
             Ok(s) => {
                 let names: Vec<&str> = s.iter().map(|s| s.as_ref()).collect();
-                options.into_iter().filter(|a| names.contains(&a.name())).collect::<Vec<_>>()
+                options
+                    .into_iter()
+                    .filter(|a| names.contains(&a.name()))
+                    .collect::<Vec<_>>()
             }
             Err(_) => {
                 println!("  Cancelled.");
@@ -261,14 +266,16 @@ impl Installer {
         }
 
         // Confirm if installing to project-level configs
-        let has_project_configs = selected.iter().any(|a| {
-            matches!(a, Agent::OpenCode | Agent::Cursor | Agent::VSCode)
-        });
+        let has_project_configs = selected
+            .iter()
+            .any(|a| matches!(a, Agent::OpenCode | Agent::Cursor | Agent::VSCode));
         if has_project_configs {
-            let ok = Confirm::new("  Write project-level MCP configs? (will be added to version control)")
-                .with_default(false)
-                .prompt()
-                .unwrap_or(false);
+            let ok = Confirm::new(
+                "  Write project-level MCP configs? (will be added to version control)",
+            )
+            .with_default(false)
+            .prompt()
+            .unwrap_or(false);
             if !ok {
                 println!("  Skipping project-level configs.");
                 return Ok(());

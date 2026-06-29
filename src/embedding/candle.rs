@@ -25,12 +25,19 @@ impl CandleEmbedder {
 
         info!("Downloading embedding model: {} (first run only)", model_id);
 
-        let config_path = repo.get("config.json")
-            .map_err(|e| anyhow::anyhow!("Failed to download config.json for {}: {}", model_id, e))?;
-        let tokenizer_path = repo.get("tokenizer.json")
-            .map_err(|e| anyhow::anyhow!("Failed to download tokenizer.json for {}: {}", model_id, e))?;
-        let weights_path = repo.get("model.safetensors")
-            .map_err(|e| anyhow::anyhow!("Failed to download model.safetensors for {}: {}", model_id, e))?;
+        let config_path = repo.get("config.json").map_err(|e| {
+            anyhow::anyhow!("Failed to download config.json for {}: {}", model_id, e)
+        })?;
+        let tokenizer_path = repo.get("tokenizer.json").map_err(|e| {
+            anyhow::anyhow!("Failed to download tokenizer.json for {}: {}", model_id, e)
+        })?;
+        let weights_path = repo.get("model.safetensors").map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to download model.safetensors for {}: {}",
+                model_id,
+                e
+            )
+        })?;
 
         let config: Config = serde_json::from_str(&std::fs::read_to_string(&config_path)?)
             .map_err(|e| anyhow::anyhow!("Failed to parse model config.json: {}", e))?;
@@ -47,7 +54,10 @@ impl CandleEmbedder {
             .map_err(|e| anyhow::anyhow!("Failed to build BERT model: {}", e))?;
         let dim = config.hidden_size;
 
-        info!("Embedding model loaded ({} dimensions, device: {:?})", dim, device);
+        info!(
+            "Embedding model loaded ({} dimensions, device: {:?})",
+            dim, device
+        );
 
         Ok(Self {
             device,
@@ -63,7 +73,8 @@ impl Embedder for CandleEmbedder {
         let mut results = Vec::with_capacity(texts.len());
 
         for text in texts {
-            let tokens = self.tokenizer
+            let tokens = self
+                .tokenizer
                 .encode(*text, true)
                 .map_err(|e| anyhow::anyhow!("Tokenization error: {}", e))?;
 
@@ -75,7 +86,9 @@ impl Embedder for CandleEmbedder {
             let token_type_ids = Tensor::new(token_type_ids, &self.device)?.unsqueeze(0)?;
             let attention_mask = Tensor::new(attention_mask, &self.device)?.unsqueeze(0)?;
 
-            let output = self.model.forward(&token_ids, &token_type_ids, Some(&attention_mask))?;
+            let output = self
+                .model
+                .forward(&token_ids, &token_type_ids, Some(&attention_mask))?;
 
             let (_batch_size, _seq_len, _hidden) = output.dims3().unwrap_or((1, 0, self.dim));
             let sum_hidden = output.sum_keepdim(1)?;

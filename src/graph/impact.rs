@@ -40,11 +40,15 @@ impl<'a> ImpactAnalysis<'a> {
 
         let mut files: HashSet<String> = HashSet::new();
         files.insert(node.file_path.clone());
-        for n in &direct { files.insert(n.file_path.clone()); }
-        for n in &transitive { files.insert(n.file_path.clone()); }
+        for n in &direct {
+            files.insert(n.file_path.clone());
+        }
+        for n in &transitive {
+            files.insert(n.file_path.clone());
+        }
 
-        let pagerank_score = crate::db::queries::get_node_pagerank(self.conn, node_id)
-            .unwrap_or(0.0);
+        let pagerank_score =
+            crate::db::queries::get_node_pagerank(self.conn, node_id).unwrap_or(0.0);
 
         let risk = if pagerank_score > 0.05 || direct.len() > 10 {
             "high"
@@ -78,12 +82,23 @@ mod tests {
     fn test_risk_level_low() {
         let result = ImpactResult {
             symbol: Node {
-                id: 1, project_id: 1, file_path: "src/main.rs".into(),
-                kind: "function".into(), name: Some("foo".into()),
-                qualified_name: None, signature: None, doc_comment: None,
-                start_line: 1, end_line: 5, complexity: Some(3), is_exported: false,
-                content_hash: None, source: None, metadata: None,
-                created_at: String::new(), updated_at: String::new(),
+                id: 1,
+                project_id: 1,
+                file_path: "src/main.rs".into(),
+                kind: "function".into(),
+                name: Some("foo".into()),
+                qualified_name: None,
+                signature: None,
+                doc_comment: None,
+                start_line: 1,
+                end_line: 5,
+                complexity: Some(3),
+                is_exported: false,
+                content_hash: None,
+                source: None,
+                metadata: None,
+                created_at: String::new(),
+                updated_at: String::new(),
             },
             direct_dependents: vec![],
             transitive_dependents: vec![],
@@ -101,12 +116,23 @@ mod tests {
         let mut direct = Vec::new();
         for i in 0..25 {
             direct.push(Node {
-                id: i + 100, project_id: 1, file_path: format!("src/mod{}.rs", i),
-                kind: "function".into(), name: Some(format!("fn{}", i)),
-                qualified_name: None, signature: None, doc_comment: None,
-                start_line: 1, end_line: 5, complexity: Some(1), is_exported: false,
-                content_hash: None, source: None, metadata: None,
-                created_at: String::new(), updated_at: String::new(),
+                id: i + 100,
+                project_id: 1,
+                file_path: format!("src/mod{}.rs", i),
+                kind: "function".into(),
+                name: Some(format!("fn{}", i)),
+                qualified_name: None,
+                signature: None,
+                doc_comment: None,
+                start_line: 1,
+                end_line: 5,
+                complexity: Some(1),
+                is_exported: false,
+                content_hash: None,
+                source: None,
+                metadata: None,
+                created_at: String::new(),
+                updated_at: String::new(),
             });
         }
         let result = ImpactResult {

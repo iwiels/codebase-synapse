@@ -1,8 +1,8 @@
 use anyhow::Result;
 use rusqlite::Connection;
 
-use crate::db::schema::{Edge, Node};
 use crate::db::queries;
+use crate::db::schema::{Edge, Node};
 
 pub struct GraphTraversal<'a> {
     conn: &'a Connection,
@@ -41,7 +41,12 @@ impl<'a> GraphTraversal<'a> {
         queries::get_file_structure(self.conn, project_id, file_path)
     }
 
-    pub fn get_related_by_edge(&self, node_id: i64, edge_kind: &str, direction: &str) -> Result<Vec<Node>> {
+    pub fn get_related_by_edge(
+        &self,
+        node_id: i64,
+        edge_kind: &str,
+        direction: &str,
+    ) -> Result<Vec<Node>> {
         let related = match direction {
             "outgoing" => {
                 let edges = queries::get_edges_by_source(self.conn, node_id, Some(edge_kind))?;

@@ -1,8 +1,8 @@
 use anyhow::Result;
 use rusqlite::Connection;
 
-use crate::db::schema::{Node, SearchResult};
 use crate::db::queries;
+use crate::db::schema::{Node, SearchResult};
 
 pub struct Bm25Search<'a> {
     conn: &'a Connection,
@@ -26,7 +26,11 @@ impl<'a> Bm25Search<'a> {
                 } else {
                     snippet
                 };
-                SearchResult { node, score, snippet }
+                SearchResult {
+                    node,
+                    score,
+                    snippet,
+                }
             })
             .collect();
         Ok(results)

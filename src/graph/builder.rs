@@ -41,7 +41,12 @@ impl<'a> GraphBuilder<'a> {
                 signature: None,
                 doc_comment: None,
                 start_line: 1,
-                end_line: result.entities.iter().map(|e| e.end_line as i64).max().unwrap_or(1),
+                end_line: result
+                    .entities
+                    .iter()
+                    .map(|e| e.end_line as i64)
+                    .max()
+                    .unwrap_or(1),
                 complexity: None,
                 is_exported: false,
                 content_hash: None,

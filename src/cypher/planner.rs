@@ -15,11 +15,12 @@ impl<'a> CypherPlanner<'a> {
 
     pub fn execute(&self, project_id: i64, query: &CypherQuery) -> Result<Value, String> {
         let (sql, params_vec) = self.plan(project_id, query)?;
-        
+
         let mut stmt = self.conn.prepare(&sql).map_err(|e| e.to_string())?;
-        
+
         // Convert params_vec to references for rusqlite
-        let params_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
 
         // Let's inspect columns to dynamic-format results
         let column_count = stmt.column_count();
@@ -27,7 +28,9 @@ impl<'a> CypherPlanner<'a> {
             .map(|i| stmt.column_name(i).unwrap_or("col").to_string())
             .collect();
 
-        let mut rows = stmt.query(params_refs.as_slice()).map_err(|e| e.to_string())?;
+        let mut rows = stmt
+            .query(params_refs.as_slice())
+            .map_err(|e| e.to_string())?;
         let mut results = Vec::new();
 
         while let Some(row) = rows.next().map_err(|e| e.to_string())? {
@@ -59,7 +62,11 @@ impl<'a> CypherPlanner<'a> {
         }))
     }
 
-    pub fn plan(&self, project_id: i64, query: &CypherQuery) -> Result<(String, Vec<Box<dyn rusqlite::types::ToSql>>), String> {
+    pub fn plan(
+        &self,
+        project_id: i64,
+        query: &CypherQuery,
+    ) -> Result<(String, Vec<Box<dyn rusqlite::types::ToSql>>), String> {
         let mut select_fields = Vec::new();
         let mut from_clauses = Vec::new();
         let mut join_clauses = Vec::new();
@@ -85,7 +92,10 @@ impl<'a> CypherPlanner<'a> {
             match element {
                 PatternElement::Node(node) => {
                     element_count += 1;
-                    let alias = node.variable.clone().unwrap_or_else(|| format!("n{}", element_count));
+                    let alias = node
+                        .variable
+                        .clone()
+                        .unwrap_or_else(|| format!("n{}", element_count));
                     let tbl_alias = format!("nodes_{}", element_count);
                     alias_map.insert(alias.clone(), tbl_alias.clone());
 
@@ -103,7 +113,10 @@ impl<'a> CypherPlanner<'a> {
                 PatternElement::Rel(rel, node) => {
                     element_count += 1;
                     let rel_alias = format!("edges_{}", element_count);
-                    let target_alias = node.variable.clone().unwrap_or_else(|| format!("n{}", element_count));
+                    let target_alias = node
+                        .variable
+                        .clone()
+                        .unwrap_or_else(|| format!("n{}", element_count));
                     let target_tbl_alias = format!("nodes_{}", element_count);
                     alias_map.insert(target_alias.clone(), target_tbl_alias.clone());
 
@@ -171,19 +184,44 @@ impl<'a> CypherPlanner<'a> {
                 if parts.len() == 2 {
                     let var = parts[0];
                     let prop = parts[1];
-                    let tbl_alias = alias_map.get(var).ok_or_else(|| format!("Unknown return variable '{}'", var))?;
+                    let tbl_alias = alias_map
+                        .get(var)
+                        .ok_or_else(|| format!("Unknown return variable '{}'", var))?;
                     // SQLite properties check - if prop is part of standard node schema:
-                    let standard_props = ["id", "project_id", "file_path", "kind", "name", "qualified_name", "signature", "doc_comment", "start_line", "end_line", "complexity", "is_exported", "content_hash", "source", "metadata", "created_at", "updated_at"];
+                    let standard_props = [
+                        "id",
+                        "project_id",
+                        "file_path",
+                        "kind",
+                        "name",
+                        "qualified_name",
+                        "signature",
+                        "doc_comment",
+                        "start_line",
+                        "end_line",
+                        "complexity",
+                        "is_exported",
+                        "content_hash",
+                        "source",
+                        "metadata",
+                        "created_at",
+                        "updated_at",
+                    ];
                     if standard_props.contains(&prop) {
                         select_fields.push(format!("{}.{} AS {var}_{prop}", tbl_alias, prop));
                     } else {
                         // Query inside properties_json
-                        select_fields.push(format!("json_extract(COALESCE({}.metadata, '{{}}'), '$.{}') AS {var}_{prop}", tbl_alias, prop));
+                        select_fields.push(format!(
+                            "json_extract(COALESCE({}.metadata, '{{}}'), '$.{}') AS {var}_{prop}",
+                            tbl_alias, prop
+                        ));
                     }
                 }
             } else {
                 // If it is just a node variable, return the node info
-                let tbl_alias = alias_map.get(ret).ok_or_else(|| format!("Unknown return variable '{}'", ret))?;
+                let tbl_alias = alias_map
+                    .get(ret)
+                    .ok_or_else(|| format!("Unknown return variable '{}'", ret))?;
                 select_fields.push(format!("{}.id, {}.file_path, {}.kind, {}.name, {}.qualified_name, {}.start_line, {}.end_line, {}.complexity, {}.is_exported", tbl_alias, tbl_alias, tbl_alias, tbl_alias, tbl_alias, tbl_alias, tbl_alias, tbl_alias, tbl_alias));
             }
         }
@@ -229,14 +267,35 @@ impl<'a> CypherPlanner<'a> {
             if let Some(tbl) = alias_map.values().next() {
                 let dir = if ob.descending { "DESC" } else { "ASC" };
                 // Check if property is standard or metadata
-                let standard_props = ["id", "project_id", "file_path", "kind", "name", "qualified_name", "signature", "doc_comment", "start_line", "end_line", "complexity", "is_exported", "content_hash", "source", "metadata", "created_at", "updated_at"];
+                let standard_props = [
+                    "id",
+                    "project_id",
+                    "file_path",
+                    "kind",
+                    "name",
+                    "qualified_name",
+                    "signature",
+                    "doc_comment",
+                    "start_line",
+                    "end_line",
+                    "complexity",
+                    "is_exported",
+                    "content_hash",
+                    "source",
+                    "metadata",
+                    "created_at",
+                    "updated_at",
+                ];
                 let parts: Vec<&str> = ob.property.split('.').collect();
                 if parts.len() == 2 {
                     let prop = parts[1];
                     if standard_props.contains(&prop) {
                         sql.push_str(&format!("\nORDER BY {}.{} {}", tbl, prop, dir));
                     } else {
-                        sql.push_str(&format!("\nORDER BY json_extract(COALESCE({}.metadata, '{{}}'), '$.{}') {}", tbl, prop, dir));
+                        sql.push_str(&format!(
+                            "\nORDER BY json_extract(COALESCE({}.metadata, '{{}}'), '$.{}') {}",
+                            tbl, prop, dir
+                        ));
                     }
                 }
             }
@@ -259,23 +318,48 @@ impl<'a> CypherPlanner<'a> {
                 }
                 let var = parts[0];
                 let prop = parts[1];
-                let tbl_alias = alias_map.get(var).ok_or_else(|| format!("Unknown variable in WHERE: '{}'", var))?;
+                let tbl_alias = alias_map
+                    .get(var)
+                    .ok_or_else(|| format!("Unknown variable in WHERE: '{}'", var))?;
 
                 sql_params.push(Box::new(value.clone()));
-                
-                let standard_props = ["id", "project_id", "file_path", "kind", "name", "qualified_name", "signature", "doc_comment", "start_line", "end_line", "complexity", "is_exported", "content_hash", "source", "metadata", "created_at", "updated_at"];
+
+                let standard_props = [
+                    "id",
+                    "project_id",
+                    "file_path",
+                    "kind",
+                    "name",
+                    "qualified_name",
+                    "signature",
+                    "doc_comment",
+                    "start_line",
+                    "end_line",
+                    "complexity",
+                    "is_exported",
+                    "content_hash",
+                    "source",
+                    "metadata",
+                    "created_at",
+                    "updated_at",
+                ];
                 if standard_props.contains(&prop) {
                     Ok(format!("{}.{} = ?", tbl_alias, prop))
                 } else {
-                    Ok(format!("json_extract(COALESCE({}.metadata, '{{}}'), '$.{}') = ?", tbl_alias, prop))
+                    Ok(format!(
+                        "json_extract(COALESCE({}.metadata, '{{}}'), '$.{}') = ?",
+                        tbl_alias, prop
+                    ))
                 }
             }
             WhereExpr::NotExistsRel(start_var, rel_pattern) => {
-                let start_tbl_alias = alias_map.get(start_var).ok_or_else(|| format!("Unknown variable in WHERE: '{}'", start_var))?;
-                
+                let start_tbl_alias = alias_map
+                    .get(start_var)
+                    .ok_or_else(|| format!("Unknown variable in WHERE: '{}'", start_var))?;
+
                 // NOT EXISTS (SELECT 1 FROM edges e_sub WHERE ... AND e_sub.project_id = nodes_1.project_id)
                 let sub_rel_tbl = "e_sub";
-                
+
                 let direction_cond = match rel_pattern.direction {
                     RelDirection::Outbound => {
                         format!("{}.source_node_id = {}.id", sub_rel_tbl, start_tbl_alias)
@@ -284,7 +368,10 @@ impl<'a> CypherPlanner<'a> {
                         format!("{}.target_node_id = {}.id", sub_rel_tbl, start_tbl_alias)
                     }
                     RelDirection::Undirected => {
-                        format!("({}.source_node_id = {}.id OR {}.target_node_id = {}.id)", sub_rel_tbl, start_tbl_alias, sub_rel_tbl, start_tbl_alias)
+                        format!(
+                            "({}.source_node_id = {}.id OR {}.target_node_id = {}.id)",
+                            sub_rel_tbl, start_tbl_alias, sub_rel_tbl, start_tbl_alias
+                        )
                     }
                 };
 
@@ -413,12 +500,14 @@ mod tests {
         let conn = setup_mock_db();
         let planner = CypherPlanner::new(&conn);
         // Find functions that are not called by any function
-        let q = parse_cypher("MATCH (f:Function) WHERE NOT EXISTS { (f)<-[:calls]-() } RETURN f.name").unwrap();
+        let q =
+            parse_cypher("MATCH (f:Function) WHERE NOT EXISTS { (f)<-[:calls]-() } RETURN f.name")
+                .unwrap();
         let res = planner.execute(1, &q).unwrap();
-        
+
         // main and unused_func should have 0 incoming calls (compute has 1 incoming call from main)
         assert_eq!(res["results_count"], 2);
-        
+
         let names: Vec<String> = res["results"]
             .as_array()
             .unwrap()

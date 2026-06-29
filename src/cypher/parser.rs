@@ -36,7 +36,7 @@ pub enum PatternElement {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum WhereExpr {
-    Eq(String, String), // e.g. f.name = "main" or f.name = 'main'
+    Eq(String, String),               // e.g. f.name = "main" or f.name = 'main'
     NotExistsRel(String, RelPattern), // e.g. NOT EXISTS { (f)<-[:calls]-() }
     And(Box<WhereExpr>, Box<WhereExpr>),
 }
@@ -80,7 +80,10 @@ fn string_literal(input: &str) -> IResult<&str, String> {
 fn node_pattern(input: &str) -> IResult<&str, NodePattern> {
     let inner = tuple((
         opt(identifier),
-        opt(preceded(tuple((multispace0, char(':'), multispace0)), identifier)),
+        opt(preceded(
+            tuple((multispace0, char(':'), multispace0)),
+            identifier,
+        )),
     ));
     map(
         delimited(char('('), inner, char(')')),
@@ -91,7 +94,10 @@ fn node_pattern(input: &str) -> IResult<&str, NodePattern> {
 fn bracket_parser(input: &str) -> IResult<&str, (Option<String>, Option<String>)> {
     let bracket_inner = tuple((
         opt(identifier),
-        opt(preceded(tuple((multispace0, char(':'), multispace0)), identifier)),
+        opt(preceded(
+            tuple((multispace0, char(':'), multispace0)),
+            identifier,
+        )),
     ));
     delimited(char('['), bracket_inner, char(']'))(input)
 }
@@ -105,24 +111,36 @@ fn rel_pattern(input: &str) -> IResult<&str, RelPattern> {
             tuple((tag("<-"), opt(bracket_parser), tag("-"))),
             |(_, content, _)| {
                 let (variable, rel_type) = content.unwrap_or((None, None));
-                RelPattern { variable, rel_type, direction: RelDirection::Inbound }
-            }
+                RelPattern {
+                    variable,
+                    rel_type,
+                    direction: RelDirection::Inbound,
+                }
+            },
         ),
         // -[rel]->
         map(
             tuple((tag("-"), opt(bracket_parser), tag("->"))),
             |(_, content, _)| {
                 let (variable, rel_type) = content.unwrap_or((None, None));
-                RelPattern { variable, rel_type, direction: RelDirection::Outbound }
-            }
+                RelPattern {
+                    variable,
+                    rel_type,
+                    direction: RelDirection::Outbound,
+                }
+            },
         ),
         // -[rel]-
         map(
             tuple((tag("-"), opt(bracket_parser), tag("-"))),
             |(_, content, _)| {
                 let (variable, rel_type) = content.unwrap_or((None, None));
-                RelPattern { variable, rel_type, direction: RelDirection::Undirected }
-            }
+                RelPattern {
+                    variable,
+                    rel_type,
+                    direction: RelDirection::Undirected,
+                }
+            },
         ),
     ))(input)
 }
@@ -188,7 +206,7 @@ fn where_expr(input: &str) -> IResult<&str, WhereExpr> {
 // Full Where expression parser, optionally with AND
 fn full_where_clause(input: &str) -> IResult<&str, WhereExpr> {
     let (input, first) = where_expr(input)?;
-    
+
     // Check for AND
     let and_parser = preceded(
         tuple((multispace1, tag_no_case("AND"), multispace1)),
@@ -232,24 +250,31 @@ fn order_by_clause(input: &str) -> IResult<&str, OrderByClause> {
         alt((tag_no_case("DESC"), tag_no_case("ASC"))),
     ))(input)?;
     let descending = dir.map(|d| d.to_uppercase() == "DESC").unwrap_or(false);
-    Ok((input, OrderByClause { property, descending }))
+    Ok((
+        input,
+        OrderByClause {
+            property,
+            descending,
+        },
+    ))
 }
 
 // Complete Cypher query parser
 pub fn parse_cypher(input: &str) -> Result<CypherQuery, String> {
     let input = input.trim();
     let to_err = |e: nom::Err<nom::error::Error<&str>>| e.to_string();
-    
+
     // MATCH clause
     let (input, _) = tag_no_case("MATCH")(input).map_err(to_err)?;
     let (input, _) = multispace1(input).map_err(to_err)?;
     let (input, pattern) = match_pattern(input).map_err(to_err)?;
-    
+
     // Optional WHERE clause
     let (input, w_expr) = match opt(preceded(
         tuple((multispace1, tag_no_case("WHERE"), multispace1)),
         full_where_clause,
-    ))(input) {
+    ))(input)
+    {
         Ok((i, w)) => (i, w),
         Err(e) => return Err(to_err(e)),
     };
@@ -261,9 +286,16 @@ pub fn parse_cypher(input: &str) -> Result<CypherQuery, String> {
 
     // Optional ORDER BY clause
     let (input, order) = match opt(preceded(
-        tuple((multispace1, tag_no_case("ORDER"), multispace1, tag_no_case("BY"), multispace1)),
+        tuple((
+            multispace1,
+            tag_no_case("ORDER"),
+            multispace1,
+            tag_no_case("BY"),
+            multispace1,
+        )),
         order_by_clause,
-    ))(input) {
+    ))(input)
+    {
         Ok((i, o)) => (i, o),
         _ => (input, None),
     };
@@ -272,7 +304,8 @@ pub fn parse_cypher(input: &str) -> Result<CypherQuery, String> {
     let (_, limit) = match opt(preceded(
         tuple((multispace1, tag_no_case("LIMIT"), multispace1)),
         limit_clause,
-    ))(input) {
+    ))(input)
+    {
         Ok((_, l)) => (input, l),
         _ => (input, None),
     };
@@ -303,7 +336,10 @@ mod tests {
         );
         assert_eq!(parsed.r#return, vec!["n".to_string()]);
         assert_eq!(parsed.limit, Some(10));
-        assert_eq!(parsed.r#where, Some(WhereExpr::Eq("n.name".to_string(), "main".to_string())));
+        assert_eq!(
+            parsed.r#where,
+            Some(WhereExpr::Eq("n.name".to_string(), "main".to_string()))
+        );
     }
 
     #[test]
@@ -311,7 +347,10 @@ mod tests {
         let q = "MATCH (f)-[:calls]->(g) RETURN f.name, g.name";
         let parsed = parse_cypher(q).unwrap();
         assert_eq!(parsed.match_pattern.len(), 2);
-        assert_eq!(parsed.r#return, vec!["f.name".to_string(), "g.name".to_string()]);
+        assert_eq!(
+            parsed.r#return,
+            vec!["f.name".to_string(), "g.name".to_string()]
+        );
     }
 
     #[test]

@@ -1,8 +1,8 @@
 use anyhow::Result;
 use rusqlite::Connection;
 
-use crate::db::schema::MemoryNote;
 use crate::db::queries;
+use crate::db::schema::MemoryNote;
 
 pub struct MemoryStore<'a> {
     conn: &'a Connection,

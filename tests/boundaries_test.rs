@@ -1,5 +1,5 @@
 // tests/boundaries_test.rs
-use codebase_synapse::graph::boundaries::{BoundaryConfig, BoundaryRule, check_boundaries};
+use codebase_synapse::graph::boundaries::{check_boundaries, BoundaryConfig, BoundaryRule};
 
 fn make_config(from: &str, deny: &[&str]) -> BoundaryConfig {
     BoundaryConfig {
@@ -54,5 +54,8 @@ fn test_allow_overrides_deny() {
     ];
     let edges = vec![(1, 2)];
     let violations = check_boundaries(&config, &files, &edges).unwrap();
-    assert!(violations.is_empty(), "allow should override deny for shared.rs");
+    assert!(
+        violations.is_empty(),
+        "allow should override deny for shared.rs"
+    );
 }

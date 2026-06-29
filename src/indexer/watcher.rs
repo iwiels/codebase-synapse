@@ -1,6 +1,6 @@
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -27,7 +27,9 @@ impl FileWatcher {
         let mut watcher = RecommendedWatcher::new(
             move |res: Result<notify::Event, notify::Error>| {
                 if let Ok(event) = res {
-                    if let EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) = event.kind {
+                    if let EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) =
+                        event.kind
+                    {
                         let paths: Vec<String> = event
                             .paths
                             .iter()

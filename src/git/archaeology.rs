@@ -31,8 +31,14 @@ impl<'a> GitArchaeologist<'a> {
 
         let mut count = 0;
         for oid_result in revwalk.take(max_commits) {
-            let oid = match oid_result { Ok(o) => o, Err(_) => continue };
-            let commit = match repo.find_commit(oid) { Ok(c) => c, Err(_) => continue };
+            let oid = match oid_result {
+                Ok(o) => o,
+                Err(_) => continue,
+            };
+            let commit = match repo.find_commit(oid) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
 
             let hash = oid.to_string();
             let short_hash = hash[..8].to_string();
@@ -50,7 +56,8 @@ impl<'a> GitArchaeologist<'a> {
 
             if let (Some(pt), Some(tt)) = (parent_tree, this_tree) {
                 let mut diff_opts = DiffOptions::new();
-                if let Ok(diff) = repo.diff_tree_to_tree(Some(&pt), Some(&tt), Some(&mut diff_opts)) {
+                if let Ok(diff) = repo.diff_tree_to_tree(Some(&pt), Some(&tt), Some(&mut diff_opts))
+                {
                     for delta in diff.deltas() {
                         if let Some(path) = delta.new_file().path() {
                             changed_files.push(path.to_string_lossy().to_string());
@@ -69,12 +76,14 @@ impl<'a> GitArchaeologist<'a> {
             )?;
 
             for file_path in &changed_files {
-                let node_ids: Vec<i64> = self.conn.prepare(
-                    "SELECT id FROM nodes WHERE project_id = ?1 AND file_path LIKE ?2"
-                )?.query_map(
-                    params![self.project_id, format!("%{}", file_path)],
-                    |row| row.get(0),
-                )?.filter_map(|r| r.ok()).collect();
+                let node_ids: Vec<i64> = self
+                    .conn
+                    .prepare("SELECT id FROM nodes WHERE project_id = ?1 AND file_path LIKE ?2")?
+                    .query_map(params![self.project_id, format!("%{}", file_path)], |row| {
+                        row.get(0)
+                    })?
+                    .filter_map(|r| r.ok())
+                    .collect();
 
                 for node_id in node_ids {
                     self.conn.execute(
@@ -87,7 +96,9 @@ impl<'a> GitArchaeologist<'a> {
             }
 
             count += 1;
-            if count % 200 == 0 { info!("Indexed {} git commits", count); }
+            if count % 200 == 0 {
+                info!("Indexed {} git commits", count);
+            }
         }
 
         info!("Git archaeology: {} commits indexed", count);
@@ -101,7 +112,7 @@ impl<'a> GitArchaeologist<'a> {
              FROM git_commits gc
              JOIN commit_node_links cnl ON cnl.commit_hash = gc.hash
              WHERE cnl.node_id = ?1 AND gc.project_id = ?2
-             ORDER BY gc.timestamp DESC LIMIT 50"
+             ORDER BY gc.timestamp DESC LIMIT 50",
         )?;
         let rows = stmt.query_map(params![node_id, self.project_id], |row| {
             Ok(GitCommitRecord {
@@ -129,12 +140,19 @@ impl<'a> GitArchaeologist<'a> {
             }));
         }
 
-        let oldest = history.last().ok_or_else(|| anyhow::anyhow!("empty history"))?;
-        let newest = history.first().ok_or_else(|| anyhow::anyhow!("empty history"))?;
-        let feat_count   = history.iter().filter(|c| c.intent_kind == "feat").count();
-        let fix_count    = history.iter().filter(|c| c.intent_kind == "fix").count();
-        let refactor_count = history.iter().filter(|c| c.intent_kind == "refactor").count();
-        let perf_count   = history.iter().filter(|c| c.intent_kind == "perf").count();
+        let oldest = history
+            .last()
+            .ok_or_else(|| anyhow::anyhow!("empty history"))?;
+        let newest = history
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("empty history"))?;
+        let feat_count = history.iter().filter(|c| c.intent_kind == "feat").count();
+        let fix_count = history.iter().filter(|c| c.intent_kind == "fix").count();
+        let refactor_count = history
+            .iter()
+            .filter(|c| c.intent_kind == "refactor")
+            .count();
+        let perf_count = history.iter().filter(|c| c.intent_kind == "perf").count();
 
         let narrative = format!(
             "First introduced in commit {} ({}) by {} on {}. \

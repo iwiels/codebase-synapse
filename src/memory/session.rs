@@ -33,7 +33,9 @@ impl SessionMemory {
         };
 
         if self.store.len() >= self.max_entries {
-            if let Some(oldest_key) = self.store.iter()
+            if let Some(oldest_key) = self
+                .store
+                .iter()
                 .min_by(|a, b| a.1.timestamp.cmp(&b.1.timestamp))
                 .map(|(k, _)| k.clone())
             {
@@ -52,10 +54,7 @@ impl SessionMemory {
         let q = query.to_lowercase();
         self.store
             .values()
-            .filter(|e| {
-                e.key.to_lowercase().contains(&q)
-                    || e.value.to_lowercase().contains(&q)
-            })
+            .filter(|e| e.key.to_lowercase().contains(&q) || e.value.to_lowercase().contains(&q))
             .collect()
     }
 

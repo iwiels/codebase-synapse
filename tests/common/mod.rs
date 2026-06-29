@@ -1,7 +1,7 @@
 #![allow(dead_code, unused_imports)]
+use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use rusqlite::Connection;
 use tempfile::TempDir;
 
 use codebase_synapse::config::Config;
@@ -74,23 +74,33 @@ pub fn tool_call_json(tool_name: &str, args: serde_json::Value) -> String {
 }
 
 pub fn parse_tool_result(response: &Option<String>) -> serde_json::Value {
-    let resp = response.as_ref().expect("parse_tool_result: response was None");
+    let resp = response
+        .as_ref()
+        .expect("parse_tool_result: response was None");
     let parsed: serde_json::Value = serde_json::from_str(resp)
         .unwrap_or_else(|e| panic!("parse_tool_result: invalid JSON: {e}\nraw: {resp}"));
-    
+
     if let Some(err) = parsed.get("error") {
         panic!("JSON-RPC error: {:?}", err);
     }
-    
-    let result = parsed.get("result").expect("parse_tool_result: no result field");
-    if result.get("isError").and_then(|v| v.as_bool()).unwrap_or(false) {
+
+    let result = parsed
+        .get("result")
+        .expect("parse_tool_result: no result field");
+    if result
+        .get("isError")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         panic!("Tool execution error: {:?}", result.get("content"));
     }
-    
-    let content = result.get("content").expect("parse_tool_result: no content field");
-    let text = content[0]["text"].as_str()
+
+    let content = result
+        .get("content")
+        .expect("parse_tool_result: no content field");
+    let text = content[0]["text"]
+        .as_str()
         .unwrap_or_else(|| panic!("parse_tool_result: unexpected response shape: {parsed}"));
-    
-    serde_json::from_str(text)
-        .unwrap_or_else(|_| serde_json::Value::String(text.to_string()))
+
+    serde_json::from_str(text).unwrap_or_else(|_| serde_json::Value::String(text.to_string()))
 }

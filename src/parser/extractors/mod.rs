@@ -1,16 +1,36 @@
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Parser, Query, QueryCursor};
 
-fn rust_lang() -> tree_sitter::Language { tree_sitter_rust::LANGUAGE.into() }
-fn python_lang() -> tree_sitter::Language { tree_sitter_python::LANGUAGE.into() }
-fn ts_lang() -> tree_sitter::Language { tree_sitter_typescript::LANGUAGE_TSX.into() }
-fn js_lang() -> tree_sitter::Language { tree_sitter_javascript::LANGUAGE.into() }
-fn go_lang() -> tree_sitter::Language { tree_sitter_go::LANGUAGE.into() }
-fn c_lang() -> tree_sitter::Language { tree_sitter_c::LANGUAGE.into() }
-fn cpp_lang() -> tree_sitter::Language { tree_sitter_cpp::LANGUAGE.into() }
-fn java_lang() -> tree_sitter::Language { tree_sitter_java::LANGUAGE.into() }
-fn csharp_lang() -> tree_sitter::Language { tree_sitter_c_sharp::LANGUAGE.into() }
-fn php_lang() -> tree_sitter::Language { tree_sitter_php::LANGUAGE_PHP.into() }
+fn rust_lang() -> tree_sitter::Language {
+    tree_sitter_rust::LANGUAGE.into()
+}
+fn python_lang() -> tree_sitter::Language {
+    tree_sitter_python::LANGUAGE.into()
+}
+fn ts_lang() -> tree_sitter::Language {
+    tree_sitter_typescript::LANGUAGE_TSX.into()
+}
+fn js_lang() -> tree_sitter::Language {
+    tree_sitter_javascript::LANGUAGE.into()
+}
+fn go_lang() -> tree_sitter::Language {
+    tree_sitter_go::LANGUAGE.into()
+}
+fn c_lang() -> tree_sitter::Language {
+    tree_sitter_c::LANGUAGE.into()
+}
+fn cpp_lang() -> tree_sitter::Language {
+    tree_sitter_cpp::LANGUAGE.into()
+}
+fn java_lang() -> tree_sitter::Language {
+    tree_sitter_java::LANGUAGE.into()
+}
+fn csharp_lang() -> tree_sitter::Language {
+    tree_sitter_c_sharp::LANGUAGE.into()
+}
+fn php_lang() -> tree_sitter::Language {
+    tree_sitter_php::LANGUAGE_PHP.into()
+}
 
 #[derive(Clone)]
 pub struct ExtractedEntity {
@@ -45,7 +65,11 @@ pub trait Extractor {
     fn extract(&self, source: &str) -> ExtractionResult;
 }
 
-fn run_query(source: &str, language: fn() -> tree_sitter::Language, query_str: &str) -> Vec<(Vec<(String, String)>, String)> {
+fn run_query(
+    source: &str,
+    language: fn() -> tree_sitter::Language,
+    query_str: &str,
+) -> Vec<(Vec<(String, String)>, String)> {
     let mut results = Vec::new();
     let mut parser = Parser::new();
     let lang = language();
@@ -65,10 +89,18 @@ fn run_query(source: &str, language: fn() -> tree_sitter::Language, query_str: &
         let mut captures = Vec::new();
         for c in m.captures.iter() {
             let name = query.capture_names()[c.index as usize].to_string();
-            let text = c.node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
+            let text = c
+                .node
+                .utf8_text(source.as_bytes())
+                .unwrap_or("")
+                .to_string();
             captures.push((name, text));
         }
-        let full_text = m.captures[0].node.utf8_text(source.as_bytes()).unwrap_or("").to_string();
+        let full_text = m.captures[0]
+            .node
+            .utf8_text(source.as_bytes())
+            .unwrap_or("")
+            .to_string();
         results.push((captures, full_text));
     }
     results
@@ -94,15 +126,40 @@ struct RustExtractor;
 impl Extractor for RustExtractor {
     fn extract(&self, source: &str) -> ExtractionResult {
         let mut entities = Vec::new();
-        for (captures, source_text) in run_query(source, rust_lang, "(function_item name: (identifier) @name) @func") {
+        for (captures, source_text) in run_query(
+            source,
+            rust_lang,
+            "(function_item name: (identifier) @name) @func",
+        ) {
             let (name, start_line, end_line) = extract_position(&captures, &source_text, source);
-            entities.push(make_entity("function", name, start_line, end_line, true, source_text));
+            entities.push(make_entity(
+                "function",
+                name,
+                start_line,
+                end_line,
+                true,
+                source_text,
+            ));
         }
-        for (captures, source_text) in run_query(source, rust_lang, "(struct_item name: (type_identifier) @name) @struct") {
+        for (captures, source_text) in run_query(
+            source,
+            rust_lang,
+            "(struct_item name: (type_identifier) @name) @struct",
+        ) {
             let (name, start_line, end_line) = extract_position(&captures, &source_text, source);
-            entities.push(make_entity("struct", name, start_line, end_line, true, source_text));
+            entities.push(make_entity(
+                "struct",
+                name,
+                start_line,
+                end_line,
+                true,
+                source_text,
+            ));
         }
-        ExtractionResult { entities, relations: vec![] }
+        ExtractionResult {
+            entities,
+            relations: vec![],
+        }
     }
 }
 
@@ -110,15 +167,40 @@ struct PythonExtractor;
 impl Extractor for PythonExtractor {
     fn extract(&self, source: &str) -> ExtractionResult {
         let mut entities = Vec::new();
-        for (captures, source_text) in run_query(source, python_lang, "(function_definition name: (identifier) @name) @func") {
+        for (captures, source_text) in run_query(
+            source,
+            python_lang,
+            "(function_definition name: (identifier) @name) @func",
+        ) {
             let (name, start_line, end_line) = extract_position(&captures, &source_text, source);
-            entities.push(make_entity("function", name, start_line, end_line, true, source_text));
+            entities.push(make_entity(
+                "function",
+                name,
+                start_line,
+                end_line,
+                true,
+                source_text,
+            ));
         }
-        for (captures, source_text) in run_query(source, python_lang, "(class_definition name: (identifier) @name) @class") {
+        for (captures, source_text) in run_query(
+            source,
+            python_lang,
+            "(class_definition name: (identifier) @name) @class",
+        ) {
             let (name, start_line, end_line) = extract_position(&captures, &source_text, source);
-            entities.push(make_entity("class", name, start_line, end_line, true, source_text));
+            entities.push(make_entity(
+                "class",
+                name,
+                start_line,
+                end_line,
+                true,
+                source_text,
+            ));
         }
-        ExtractionResult { entities, relations: vec![] }
+        ExtractionResult {
+            entities,
+            relations: vec![],
+        }
     }
 }
 
@@ -132,16 +214,33 @@ impl Extractor for TsExtractor {
                   (type_alias_declaration name: (type_identifier) @name) @decl
                   (enum_declaration name: (identifier) @name) @decl";
         for (captures, source_text) in run_query(source, ts_lang, q) {
-            let kind = if source_text.starts_with("function") { "function" }
-                else if source_text.starts_with("class") { "class" }
-                else if source_text.starts_with("interface") { "interface" }
-                else if source_text.starts_with("type") { "type" }
-                else if source_text.starts_with("enum") { "enum" }
-                else { "declaration" };
+            let kind = if source_text.starts_with("function") {
+                "function"
+            } else if source_text.starts_with("class") {
+                "class"
+            } else if source_text.starts_with("interface") {
+                "interface"
+            } else if source_text.starts_with("type") {
+                "type"
+            } else if source_text.starts_with("enum") {
+                "enum"
+            } else {
+                "declaration"
+            };
             let (name, start_line, end_line) = extract_position(&captures, &source_text, source);
-            entities.push(make_entity(kind, name, start_line, end_line, source_text.contains("export"), source_text));
+            entities.push(make_entity(
+                kind,
+                name,
+                start_line,
+                end_line,
+                source_text.contains("export"),
+                source_text,
+            ));
         }
-        ExtractionResult { entities, relations: vec![] }
+        ExtractionResult {
+            entities,
+            relations: vec![],
+        }
     }
 }
 
@@ -152,11 +251,25 @@ impl Extractor for JsExtractor {
         let q = "(function_declaration name: (identifier) @name) @decl
                   (class_declaration name: (type_identifier) @name) @decl";
         for (captures, source_text) in run_query(source, js_lang, q) {
-            let kind = if source_text.starts_with("function") { "function" } else { "class" };
+            let kind = if source_text.starts_with("function") {
+                "function"
+            } else {
+                "class"
+            };
             let (name, start_line, end_line) = extract_position(&captures, &source_text, source);
-            entities.push(make_entity(kind, name, start_line, end_line, source_text.contains("export"), source_text));
+            entities.push(make_entity(
+                kind,
+                name,
+                start_line,
+                end_line,
+                source_text.contains("export"),
+                source_text,
+            ));
         }
-        ExtractionResult { entities, relations: vec![] }
+        ExtractionResult {
+            entities,
+            relations: vec![],
+        }
     }
 }
 
@@ -168,14 +281,30 @@ impl Extractor for GoExtractor {
                   (method_declaration name: (field_identifier) @name) @decl
                   (type_declaration (type_spec name: (type_identifier) @name)) @decl";
         for (captures, source_text) in run_query(source, go_lang, q) {
-            let kind = if source_text.starts_with("func ") && source_text.contains("func (") { "method" }
-                else if source_text.starts_with("func") { "function" }
-                else { "type" };
+            let kind = if source_text.starts_with("func ") && source_text.contains("func (") {
+                "method"
+            } else if source_text.starts_with("func") {
+                "function"
+            } else {
+                "type"
+            };
             let (name, start_line, end_line) = extract_position(&captures, &source_text, source);
-            let exported = name.as_deref().is_some_and(|n| n.chars().next().is_some_and(|c| c.is_uppercase()));
-            entities.push(make_entity(kind, name, start_line, end_line, exported, source_text));
+            let exported = name
+                .as_deref()
+                .is_some_and(|n| n.chars().next().is_some_and(|c| c.is_uppercase()));
+            entities.push(make_entity(
+                kind,
+                name,
+                start_line,
+                end_line,
+                exported,
+                source_text,
+            ));
         }
-        ExtractionResult { entities, relations: vec![] }
+        ExtractionResult {
+            entities,
+            relations: vec![],
+        }
     }
 }
 
@@ -187,13 +316,27 @@ impl Extractor for CExtractor {
                   (struct_specifier name: (type_identifier) @name) @decl
                   (enum_specifier name: (type_identifier) @name) @decl";
         for (captures, source_text) in run_query(source, c_lang, q) {
-            let kind = if source_text.contains("struct") { "struct" }
-                else if source_text.contains("enum") { "enum" }
-                else { "function" };
+            let kind = if source_text.contains("struct") {
+                "struct"
+            } else if source_text.contains("enum") {
+                "enum"
+            } else {
+                "function"
+            };
             let (name, start_line, end_line) = extract_position(&captures, &source_text, source);
-            entities.push(make_entity(kind, name, start_line, end_line, true, source_text));
+            entities.push(make_entity(
+                kind,
+                name,
+                start_line,
+                end_line,
+                true,
+                source_text,
+            ));
         }
-        ExtractionResult { entities, relations: vec![] }
+        ExtractionResult {
+            entities,
+            relations: vec![],
+        }
     }
 }
 
@@ -206,13 +349,27 @@ impl Extractor for CppExtractor {
                   (class_specifier name: (type_identifier) @name) @decl
                   (struct_specifier name: (type_identifier) @name) @decl";
         for (captures, source_text) in run_query(source, cpp_lang, q) {
-            let kind = if source_text.contains("class") { "class" }
-                else if source_text.contains("struct") { "struct" }
-                else { "function" };
+            let kind = if source_text.contains("class") {
+                "class"
+            } else if source_text.contains("struct") {
+                "struct"
+            } else {
+                "function"
+            };
             let (name, start_line, end_line) = extract_position(&captures, &source_text, source);
-            entities.push(make_entity(kind, name, start_line, end_line, true, source_text));
+            entities.push(make_entity(
+                kind,
+                name,
+                start_line,
+                end_line,
+                true,
+                source_text,
+            ));
         }
-        ExtractionResult { entities, relations: vec![] }
+        ExtractionResult {
+            entities,
+            relations: vec![],
+        }
     }
 }
 
@@ -224,14 +381,28 @@ impl Extractor for JavaExtractor {
                   (interface_declaration name: (identifier) @name) @decl
                   (method_declaration name: (identifier) @name) @decl";
         for (captures, source_text) in run_query(source, java_lang, q) {
-            let kind = if source_text.contains("class ") { "class" }
-                else if source_text.contains("interface ") { "interface" }
-                else { "method" };
+            let kind = if source_text.contains("class ") {
+                "class"
+            } else if source_text.contains("interface ") {
+                "interface"
+            } else {
+                "method"
+            };
             let (name, start_line, end_line) = extract_position(&captures, &source_text, source);
             let exported = source_text.contains("public") || source_text.contains("protected");
-            entities.push(make_entity(kind, name, start_line, end_line, exported, source_text));
+            entities.push(make_entity(
+                kind,
+                name,
+                start_line,
+                end_line,
+                exported,
+                source_text,
+            ));
         }
-        ExtractionResult { entities, relations: vec![] }
+        ExtractionResult {
+            entities,
+            relations: vec![],
+        }
     }
 }
 
@@ -244,18 +415,34 @@ impl Extractor for CSharpExtractor {
                   (struct_declaration name: (identifier) @name) @decl
                   (method_declaration name: (identifier) @name) @decl";
         for (captures, source_text) in run_query(source, csharp_lang, q) {
-            let kind = if source_text.contains("class ") { "class" }
-                else if source_text.contains("interface ") { "interface" }
-                else if source_text.contains("struct ") { "struct" }
-                else { "method" };
+            let kind = if source_text.contains("class ") {
+                "class"
+            } else if source_text.contains("interface ") {
+                "interface"
+            } else if source_text.contains("struct ") {
+                "struct"
+            } else {
+                "method"
+            };
             let (name, start_line, end_line) = extract_position(&captures, &source_text, source);
-            let exported = source_text.contains("public") || source_text.contains("protected") || source_text.contains("internal");
-            entities.push(make_entity(kind, name, start_line, end_line, exported, source_text));
+            let exported = source_text.contains("public")
+                || source_text.contains("protected")
+                || source_text.contains("internal");
+            entities.push(make_entity(
+                kind,
+                name,
+                start_line,
+                end_line,
+                exported,
+                source_text,
+            ));
         }
-        ExtractionResult { entities, relations: vec![] }
+        ExtractionResult {
+            entities,
+            relations: vec![],
+        }
     }
 }
-
 
 struct PhpExtractor;
 impl Extractor for PhpExtractor {
@@ -266,27 +453,58 @@ impl Extractor for PhpExtractor {
                   (function_definition name: (name) @name) @decl
                   (method_declaration name: (name) @name) @decl";
         for (captures, source_text) in run_query(source, php_lang, q) {
-            let kind = if source_text.contains("class ") { "class" }
-                else if source_text.contains("interface ") { "interface" }
-                else if source_text.contains("function ") && source_text.contains("function") { "function" }
-                else { "method" };
+            let kind = if source_text.contains("class ") {
+                "class"
+            } else if source_text.contains("interface ") {
+                "interface"
+            } else if source_text.contains("function ") && source_text.contains("function") {
+                "function"
+            } else {
+                "method"
+            };
             let (name, start_line, end_line) = extract_position(&captures, &source_text, source);
             let exported = !source_text.contains("private") && !source_text.contains("protected");
-            entities.push(make_entity(kind, name, start_line, end_line, exported, source_text));
+            entities.push(make_entity(
+                kind,
+                name,
+                start_line,
+                end_line,
+                exported,
+                source_text,
+            ));
         }
-        ExtractionResult { entities, relations: vec![] }
+        ExtractionResult {
+            entities,
+            relations: vec![],
+        }
     }
 }
 
-fn extract_position(captures: &[(String, String)], source_text: &str, full_source: &str) -> (Option<String>, usize, usize) {
-    let name = captures.iter().find(|(n, _)| n == "name").map(|(_, t)| t.clone());
+fn extract_position(
+    captures: &[(String, String)],
+    source_text: &str,
+    full_source: &str,
+) -> (Option<String>, usize, usize) {
+    let name = captures
+        .iter()
+        .find(|(n, _)| n == "name")
+        .map(|(_, t)| t.clone());
     let start_line = full_source[..full_source.find(source_text).unwrap_or(0)]
-        .matches('\n').count() + 1;
+        .matches('\n')
+        .count()
+        + 1;
     let end_line = start_line + source_text.matches('\n').count();
     (name, start_line, end_line)
 }
 
-fn make_entity(kind: &'static str, name: Option<String>, start_line: usize, end_line: usize, exported: bool, source: String) -> ExtractedEntity {
+fn make_entity(
+    kind: &'static str,
+    name: Option<String>,
+    start_line: usize,
+    end_line: usize,
+    exported: bool,
+    source: String,
+) -> ExtractedEntity {
     ExtractedEntity {
         kind,
         name: name.clone(),
@@ -323,9 +541,11 @@ pub fn extract_tested_symbols(source: &str, language: &str) -> Vec<String> {
     match language {
         "rust" => {
             // Rust test functions via #[test] attribute
-            for (captures, _) in run_query(source, rust_lang,
-                "(function_item name: (identifier) @name) @func")
-            {
+            for (captures, _) in run_query(
+                source,
+                rust_lang,
+                "(function_item name: (identifier) @name) @func",
+            ) {
                 if let Some((_, name)) = captures.iter().find(|(n, _)| n == "name") {
                     if let Some(stripped) = name.strip_prefix("test_") {
                         // Strip "test_" prefix to get likely target symbol
@@ -336,9 +556,11 @@ pub fn extract_tested_symbols(source: &str, language: &str) -> Vec<String> {
             }
         }
         "python" => {
-            for (captures, _) in run_query(source, python_lang,
-                "(function_definition name: (identifier) @name) @func")
-            {
+            for (captures, _) in run_query(
+                source,
+                python_lang,
+                "(function_definition name: (identifier) @name) @func",
+            ) {
                 if let Some((_, name)) = captures.iter().find(|(n, _)| n == "name") {
                     if let Some(stripped) = name.strip_prefix("test_") {
                         symbols.push(stripped.to_string());
@@ -348,9 +570,11 @@ pub fn extract_tested_symbols(source: &str, language: &str) -> Vec<String> {
             }
         }
         "go" => {
-            for (captures, _) in run_query(source, go_lang,
-                "(function_declaration name: (identifier) @name) @func")
-            {
+            for (captures, _) in run_query(
+                source,
+                go_lang,
+                "(function_declaration name: (identifier) @name) @func",
+            ) {
                 if let Some((_, name)) = captures.iter().find(|(n, _)| n == "name") {
                     if let Some(stripped) = name.strip_prefix("Test") {
                         symbols.push(stripped.to_string()); // strip "Test" prefix

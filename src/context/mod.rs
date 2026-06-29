@@ -31,26 +31,31 @@ impl<'a> ContextBudget<'a> {
         // Step 1: Find relevant symbols
         let relevant_nodes: Vec<Node> = if query_vec.is_some() {
             let hybrid = HybridSearch::new(self.conn);
-            hybrid.search(self.project_id, task_description, query_vec, limit as usize)?
-                .into_iter().map(|r| r.node).collect()
+            hybrid
+                .search(self.project_id, task_description, query_vec, limit as usize)?
+                .into_iter()
+                .map(|r| r.node)
+                .collect()
         } else {
             let bm25 = Bm25Search::new(self.conn);
             bm25.search(self.project_id, task_description, limit)?
-                .into_iter().map(|r| r.node).collect()
+                .into_iter()
+                .map(|r| r.node)
+                .collect()
         };
 
         // Step 2: Impact analysis on most relevant node
-        let impact = relevant_nodes.first().and_then(|n| {
-            ImpactAnalysis::new(self.conn).analyze(n.id, 3).ok()
-        });
+        let impact = relevant_nodes
+            .first()
+            .and_then(|n| ImpactAnalysis::new(self.conn).analyze(n.id, 3).ok());
 
         // Step 3: Related memory notes
-        let memories = db::queries::search_memory_notes(
-            self.conn, self.project_id, task_description, 10
-        ).unwrap_or_else(|e| {
-            tracing::warn!("Memory search failed: {}", e);
-            vec![]
-        });
+        let memories =
+            db::queries::search_memory_notes(self.conn, self.project_id, task_description, 10)
+                .unwrap_or_else(|e| {
+                    tracing::warn!("Memory search failed: {}", e);
+                    vec![]
+                });
 
         // Step 4: Graph context for top 3 nodes
         let traversal = GraphTraversal::new(self.conn);

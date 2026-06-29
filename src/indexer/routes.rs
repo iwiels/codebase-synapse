@@ -1,9 +1,9 @@
+use crate::db::{self, schema::Node};
 use anyhow::Result;
 use regex::Regex;
 use rusqlite::Connection;
-use std::sync::LazyLock;
-use crate::db::{self, schema::Node};
 use serde_json::json;
+use std::sync::LazyLock;
 
 static MULTI_SLASH_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"/{2,}").unwrap());
 static TEMPLATE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\{[a-zA-Z0-9_]+\}").unwrap());
@@ -11,13 +11,15 @@ static FLASK_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[a-zA-Z0-9_:]+
 static EXPRESS_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r":[a-zA-Z0-9_]+").unwrap());
 static OPENAPI_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\{[a-zA-Z0-9_]+\}").unwrap());
 
-static ROUTE_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| vec![
+static ROUTE_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+    vec![
     Regex::new(r#"(?i)(?:app|router|route|api)\.(get|post|put|delete|patch|options|head)\s*\(\s*['"`]([^'"`\s?#]+)['"`]"#).unwrap(),
     Regex::new(r#"(?i)@(?:app|router|api|blueprint)\.(get|post|put|delete|patch|route)\s*\(\s*['"`]([^'"`\s?#]+)['"`]"#).unwrap(),
     Regex::new(r#"\.(GET|POST|PUT|DELETE|PATCH|Handle|HandleFunc)\s*\(\s*['"`]([^'"`\s?#]+)['"`]"#).unwrap(),
     Regex::new(r#"\.route\s*\(\s*['"`]([^'"`\s?#]+)['"`]\s*,\s*(get|post|put|delete|patch)"#).unwrap(),
     Regex::new(r#"(?i)@(GetMapping|PostMapping|PutMapping|DeleteMapping|RequestMapping)\s*\(\s*(?:value\s*=\s*)?['"`]([^'"`\s?#]+)['"`]"#).unwrap(),
-]);
+]
+});
 
 pub fn canonicalize_path(path: &str) -> String {
     let mut clean = MULTI_SLASH_RE.replace_all(path, "/").to_string();
@@ -30,7 +32,7 @@ pub fn canonicalize_path(path: &str) -> String {
     if !clean.starts_with('/') {
         clean = format!("/{}", clean);
     }
-    
+
     // Trim trailing slash (except if it is just "/")
     if clean.len() > 1 && clean.ends_with('/') {
         clean.pop();
@@ -51,17 +53,34 @@ pub fn extract_and_insert_routes(
 
     for re in ROUTE_PATTERNS.iter() {
         for cap in re.captures_iter(source) {
-            let mut method = cap.get(1).map(|m| m.as_str().to_uppercase()).unwrap_or_else(|| "GET".to_string());
-            let mut path = cap.get(2).map(|m| m.as_str().to_string()).unwrap_or_else(|| "/".to_string());
+            let mut method = cap
+                .get(1)
+                .map(|m| m.as_str().to_uppercase())
+                .unwrap_or_else(|| "GET".to_string());
+            let mut path = cap
+                .get(2)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_else(|| "/".to_string());
 
             // Special handling for Axum route where path is group 1 and method is group 2
             if re.as_str().contains(r"\.route") {
-                path = cap.get(1).map(|m| m.as_str().to_string()).unwrap_or_else(|| "/".to_string());
-                method = cap.get(2).map(|m| m.as_str().to_uppercase()).unwrap_or_else(|| "GET".to_string());
+                path = cap
+                    .get(1)
+                    .map(|m| m.as_str().to_string())
+                    .unwrap_or_else(|| "/".to_string());
+                method = cap
+                    .get(2)
+                    .map(|m| m.as_str().to_uppercase())
+                    .unwrap_or_else(|| "GET".to_string());
             }
 
             // Normalise Spring RequestMapping to GET by default
-            if method.contains("MAPPING") && !method.contains("GET") && !method.contains("POST") && !method.contains("PUT") && !method.contains("DELETE") {
+            if method.contains("MAPPING")
+                && !method.contains("GET")
+                && !method.contains("POST")
+                && !method.contains("PUT")
+                && !method.contains("DELETE")
+            {
                 method = "GET".to_string();
             }
 
@@ -100,7 +119,14 @@ pub fn extract_and_insert_routes(
         let route_node_id = db::queries::insert_node(conn, project_id, &route_node)?;
 
         // Link file containing definition to route node
-        db::queries::insert_edge(conn, project_id, file_node_id, route_node_id, "handles", None)?;
+        db::queries::insert_edge(
+            conn,
+            project_id,
+            file_node_id,
+            route_node_id,
+            "handles",
+            None,
+        )?;
     }
 
     Ok(())

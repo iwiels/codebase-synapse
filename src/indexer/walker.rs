@@ -21,10 +21,7 @@ pub fn walk_files(root: &Path) -> Result<Vec<PathBuf>> {
             continue;
         }
         let path = entry.path();
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         let filename = path
             .file_name()
             .and_then(|f| f.to_str())
