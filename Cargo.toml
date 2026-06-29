@@ -1,0 +1,96 @@
+[package]
+name = "codebase-synapse"
+version = "0.1.0"
+edition = "2021"
+description = "MCP server for codebase indexing with knowledge graph, semantic search, and persistent memory"
+
+[features]
+default = ["embedding"]
+embedding = ["dep:candle-core", "dep:candle-nn", "dep:candle-transformers", "dep:hf-hub", "dep:tokenizers"]
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# SQLite
+rusqlite = { version = "0.40", features = ["bundled"] }
+
+# Streaming iterator (needed by tree-sitter 0.26 API)
+streaming-iterator = "0.1"
+
+# Tree-sitter parsing
+tree-sitter = "0.26"
+tree-sitter-language = "0.1"
+tree-sitter-rust = "0.24"
+tree-sitter-python = "0.25"
+tree-sitter-typescript = "0.23"
+tree-sitter-javascript = "0.25"
+tree-sitter-go = "0.25"
+tree-sitter-c = "0.24"
+tree-sitter-cpp = "0.23"
+tree-sitter-java = "0.23"
+tree-sitter-c-sharp = "0.23"
+tree-sitter-php = "0.24"
+
+
+# File watching
+notify = { version = "7", features = [] }
+
+# Gitignore patterns
+ignore = "0.4"
+globset = "0.4"
+
+# Hashing
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Embeddings (local, via Candle) - optional feature
+candle-core = { version = "0.11", optional = true }
+candle-nn = { version = "0.11", optional = true }
+candle-transformers = { version = "0.11", optional = true }
+hf-hub = { version = "0.4", optional = true }
+tokenizers = { version = "0.21", optional = true }
+
+# Utilities
+rayon = "1"
+chrono = { version = "0.4", features = ["serde"] }
+regex = "1"
+nom = "7"
+toml = "0.8"
+serde_yaml = "0.9"
+
+# Git history
+git2 = { version = "0.19", default-features = false }
+
+# Compression for artifact export
+zstd = { version = "0.13", features = [] }
+
+# Interactive TUI for install command
+inquire = "0.7"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+[workspace]
+members = [".", "codebase-guard"]
+resolver = "2"

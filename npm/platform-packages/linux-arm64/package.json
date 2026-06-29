@@ -1,0 +1,12 @@
+{
+  "name": "@codebase-synapse/index-linux-arm64",
+  "version": "0.1.0",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "main": "index.js",
+  "binary-path": "index.js"
+}

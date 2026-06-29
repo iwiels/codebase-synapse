@@ -1,0 +1,33 @@
+# Rust build artifacts
+target/
+target_custom/
+Cargo.lock
+
+# Node/NPM files
+node_modules/
+package-lock.json
+npm-debug.log*
+
+# SQLite Database files (graph cache)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Log and temp files
+*.log
+.taskmaster/
+.DS_Store
+Thumbs.db
+
+# Editor and IDE configurations
+.vscode/
+.idea/
+*.suo
+*.user
+*.sln
+
+# Os temp files
+*.swp
+*.swo
+*~

@@ -1,0 +1,45 @@
+{
+  "name": "codebase-synapse",
+  "version": "0.1.0",
+  "description": "Codebase Knowledge Graph MCP server – index, search, and explore your codebase with AI",
+  "bin": {
+    "index": "bin/index.js"
+  },
+  "scripts": {
+    "postinstall": "node download.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codebase-synapse/index.git"
+  },
+  "keywords": [
+    "mcp",
+    "codebase",
+    "knowledge-graph",
+    "code-search",
+    "tree-sitter",
+    "ai"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "win32",
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "optionalDependencies": {
+    "@codebase-synapse/index-win32-x64": "0.1.0",
+    "@codebase-synapse/index-win32-arm64": "0.1.0",
+    "@codebase-synapse/index-darwin-x64": "0.1.0",
+    "@codebase-synapse/index-darwin-arm64": "0.1.0",
+    "@codebase-synapse/index-linux-x64": "0.1.0",
+    "@codebase-synapse/index-linux-arm64": "0.1.0"
+  }
+}
