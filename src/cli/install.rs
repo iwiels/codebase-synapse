@@ -188,57 +188,43 @@ impl Installer {
         println!("  {}", project_dir.display());
         println!();
 
-        // Detect all agents
-        let mut detected = Vec::new();
-        let mut not_detected = Vec::new();
+        // Detect which agents exist to set them as defaults
+        let mut defaults = Vec::new();
+        let mut detected_names = Vec::new();
 
-        for agent in ALL_AGENTS {
+        for (i, agent) in ALL_AGENTS.iter().enumerate() {
             if agent.detected(&home, &project_dir) {
-                detected.push(agent);
-            } else {
-                not_detected.push(agent);
+                defaults.push(i);
+                detected_names.push(agent.name());
             }
         }
 
-        if detected.is_empty() {
-            println!("  No AI agents detected.");
+        if defaults.is_empty() {
+            println!("  ℹ No active AI agent configurations were auto-detected.");
+            println!("    (You can still select any agent below to create its config file)");
             println!();
-            println!("  Install one of these and run `index install` again:");
+        } else {
+            println!(
+                "  ℹ Auto-detected configurations for: {}",
+                detected_names.join(", ")
+            );
             println!();
-            for agent in not_detected {
-                let paths = agent.config_paths(&home, &project_dir);
-                let path_str = paths
-                    .iter()
-                    .map(|p| p.display().to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                println!("    • {}  ({})", agent.name(), path_str);
-            }
-            println!();
-            println!("  You can also add this to any MCP client manually:");
-            println!();
-            println!("  {{\n    \"mcpServers\": {{\n      \"codebase-synapse\": {{\n        \"command\": \"npx\",\n        \"args\": [\"-y\", \"codebase-synapse\", \"--project-root\", \".\"]\n      }}\n    }}\n  }}");
-            println!();
-            return Ok(());
         }
 
-        // Show detected agents with multi-select
-        let options: Vec<&Agent> = detected.to_vec();
-        let default_idx: Vec<usize> = (0..options.len()).collect();
-
+        // Show all agents with multi-select
         let selection = MultiSelect::new(
-            "  Select AI agents to configure:",
-            options.iter().map(|a| a.name()).collect(),
+            "  Select AI agents to configure with codebase-synapse:",
+            ALL_AGENTS.iter().map(|a| a.name()).collect(),
         )
-        .with_default(&default_idx)
+        .with_default(&defaults)
         .with_help_message("↑↓ move, Space toggle, Enter confirm")
         .prompt();
 
         let selected = match selection {
             Ok(s) => {
                 let names: Vec<&str> = s.iter().map(|s| s.as_ref()).collect();
-                options
-                    .into_iter()
+                ALL_AGENTS
+                    .iter()
                     .filter(|a| names.contains(&a.name()))
                     .collect::<Vec<_>>()
             }
