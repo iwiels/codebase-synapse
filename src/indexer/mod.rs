@@ -328,7 +328,8 @@ impl Indexer {
                     .conn
                     .lock()
                     .map_err(|e| anyhow::anyhow!("DB lock poisoned: {}", e))?;
-                let existing_hash = db::queries::get_file_state_hash(&conn, project_id, changed_file)?;
+                let existing_hash =
+                    db::queries::get_file_state_hash(&conn, project_id, changed_file)?;
                 if existing_hash.as_deref() == Some(&content_hash_str) {
                     continue;
                 }
@@ -337,8 +338,8 @@ impl Indexer {
             let parsed = match parser::parse_file(&full_path, &source)? {
                 Some(p) => Some(p),
                 None => {
-                    let is_special =
-                        manifests::is_manifest_file(changed_file) || infra::is_infra_file(changed_file);
+                    let is_special = manifests::is_manifest_file(changed_file)
+                        || infra::is_infra_file(changed_file);
                     if is_special {
                         None
                     } else {
