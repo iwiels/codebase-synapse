@@ -1,6 +1,6 @@
 [package]
 name = "codebase-synapse"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 description = "MCP server for codebase indexing with knowledge graph, semantic search, and persistent memory"
 
