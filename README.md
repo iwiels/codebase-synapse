@@ -1,80 +1,26 @@
-# codebase-synapse 🧠
+# codebase-synapse
 
-> **The MCP server that gives your AI agent a brain.**
+An MCP server that indexes your codebase into a local knowledge graph.
 
 [![npm](https://img.shields.io/npm/v/codebase-synapse.svg)](https://www.npmjs.com/package/codebase-synapse)
-[![npm downloads](https://img.shields.io/npm/dm/codebase-synapse.svg)](https://www.npmjs.com/package/codebase-synapse)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
-[![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-blue.svg)](https://modelcontextprotocol.io/)
-
-Stop letting your AI agent read entire files to answer a single question.
-**codebase-synapse** indexes your codebase into a local knowledge graph so your agent can query *exactly* what it needs — call chains, blast radius, architectural decisions, git history — in a single tool call.
 
 ---
 
-## The Problem
+## What It Does
 
-When you ask Claude Code or Cursor *"what breaks if I change this function?"*, the agent reads **entire files** to figure it out. That's slow, expensive, and hits context limits fast.
+codebase-synapse parses your code with [Tree-sitter](https://tree-sitter.github.io/tree-sitter/), builds a knowledge graph of all functions, classes, imports, and call relationships, and stores it in a local SQLite database. Your AI agent queries the graph via MCP instead of reading raw files.
 
-## The Solution
-
-codebase-synapse builds a **persistent, local knowledge graph** of your codebase using Tree-sitter AST parsing and SQLite. Your AI agent queries the graph instead of reading files — getting precise, structured answers in milliseconds.
-
-```
-# Without codebase-synapse:
-Agent reads 47 files to understand one function → 12,000 tokens
-
-# With codebase-synapse:
-Agent calls impact_analysis() → 200 tokens, same answer
-```
+**Supported languages:** Rust, TypeScript, JavaScript, Python, Go, Java, C, C++, C#, PHP.
 
 ---
 
-## One Command to Set Up Everything
+## Setup
 
-```bash
-npx codebase-synapse install
-```
+### 1. Add to your MCP client config
 
-That's it. The installer **automatically detects** which AI agents you have on your machine and configures all of them:
-
-```
-  🔍 codebase-synapse installer
-  /Users/you/my-project
-
-  ✓ Detected: Claude Code, Cursor, VS Code
-
-  Select AI agents to configure:
-  ❯ ◉ Claude Code
-    ◉ Cursor
-    ◉ VS Code
-
-  ✓ Claude Code  → ~/.claude/.mcp.json
-  ✓ Cursor       → .cursor/mcp.json
-  ✓ VS Code      → .vscode/mcp.json
-
-  Done! Restart your AI agent to use codebase-synapse.
-```
-
-**Supported agents — detected automatically:**
-
-| Agent | Auto-detected? | Config Written |
-|---|:---:|---|
-| Claude Code | ✅ | `~/.claude/.mcp.json` |
-| OpenCode | ✅ | `~/.config/opencode/mcp.json` |
-| Cursor | ✅ | `.cursor/mcp.json` |
-| VS Code | ✅ | `.vscode/mcp.json` |
-| Zed | ✅ | `~/.config/zed/settings.json` |
-| Gemini CLI | ✅ | `~/.config/gemini/settings.json` |
-| Aider | ✅ | `.aider.conf.yml` |
-| Continue.dev | ✅ | `~/.continue/config.json` |
-
-No copy-pasting JSON. No reading documentation. Just run one command.
-
----
-
-## Manual Config (for any MCP client)
+Add this JSON block to the configuration file of your AI client:
 
 ```json
 {
@@ -87,91 +33,131 @@ No copy-pasting JSON. No reading documentation. Just run one command.
 }
 ```
 
----
+> **Note:** On Windows, use `"command": "npx.cmd"` instead of `"npx"`.
 
-## What Can Your Agent Do Now?
+### Where to paste it
 
-After indexing, just tell your agent:
+| Client | Config file location |
+|---|---|
+| Claude Desktop (macOS) | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Claude Desktop (Windows) | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Cursor | `.cursor/mcp.json` (in your project root) |
+| VS Code | `.vscode/mcp.json` (in your project root) |
+| Zed | `~/.config/zed/settings.json` |
 
-> *"What files would break if I rename this function?"*
-> *"Show me all callers of `processPayment` across the entire codebase"*
-> *"Why does this code exist? Show me the git history"*
-> *"What are the highest-risk files to edit right now?"*
+### 2. Restart your AI agent
 
-These are answered in **one tool call** instead of reading dozens of files.
+After saving the config, restart your AI client. The server starts automatically when the agent needs it.
 
----
+### 3. Index your project
 
-## Key Features
+Tell your AI agent:
 
-### 🎯 Context Budgeting (`prepare_task_context`)
-Describe your task in plain English. Synapse assembles the optimal context bundle — relevant symbols, callers/callees, impact analysis, related notes — tuned to your token budget.
+> "Index this project"
 
-### 🕸️ Knowledge Graph + Blast Radius Analysis
-Every function, class, import, and call relationship is mapped. Before touching a file, run `impact_analysis` to see exactly what you'd break.
-
-### 🔍 Hybrid Semantic Search
-BM25 full-text search + local vector embeddings (all-MiniLM-L6-v2, runs offline) fused with Reciprocal Rank Fusion. No OpenAI API required.
-
-### 📜 Git Archaeology
-`git_archaeology` doesn't just show you commits — it narrates *why* code exists, combining commit messages, churn rates, and complexity scores to explain the evolutionary history of any symbol.
-
-### 🏛️ Architecture Decision Records (ADRs)
-Your agent can read and write ADRs directly. Decisions are part of the knowledge graph, not a forgotten markdown file.
-
-### 💾 Persistent Memory
-Facts, insights, and decisions survive agent resets. Store them at session or project level.
-
-### 🛡️ codebase-guard *(Claude Code only)*
-An optional `PreToolUse` hook that automatically **blocks edits to architectural hubs** (files with high PageRank + blast radius) and requires an impact review first. Prevents accidental breakage of critical infrastructure.
+The agent will call `index_repository` and the knowledge graph gets built. After that, all tools are available.
 
 ---
 
-## How It Compares
+## How It Works
 
-| Feature | **codebase-synapse** | CodeGraphContext | CodeGraph | codebase-memory-mcp |
-|---|:---:|:---:|:---:|:---:|
-| Auto-install for 8+ agents | **✅** | ❌ | ❌ | ❌ |
-| `prepare_task_context` (token budget) | **✅** | ❌ | ❌ | ❌ |
-| Git Archaeology & Narratives | **✅** | ❌ | ❌ | ❌ |
-| Architecture Decision Records | **✅** | ❌ | ❌ | ❌ |
-| Cypher-like graph queries | **✅** | ❌ | ❌ | ❌ |
-| Boundary violation detection | **✅** | ❌ | ❌ | ❌ |
-| codebase-guard hook | **✅** | ❌ | ❌ | ❌ |
-| Hybrid semantic search | **✅** | ✅ | ✅ | ✅ |
-| Incremental re-indexing | **✅** | ✅ | ✅ | ✅ |
-| Local / offline (no API keys) | **✅** | ✅ | ✅ | ❌ |
+1. **npx downloads the binary** — a native Rust binary for your platform (Windows, macOS, Linux). No compilation needed.
+2. **The server starts via stdio** — your AI client launches it as a child process and communicates over stdin/stdout using the MCP protocol.
+3. **Data is stored in `~/.codebase-synapse/`** — a SQLite database with the knowledge graph, embeddings, and memory. Nothing is written inside your project directory.
+4. **Your agent calls tools** — instead of reading files, the agent queries the graph for callers, callees, impact analysis, etc.
 
 ---
 
-## MCP Tools Reference
+## MCP Tools
 
-| Category | Tool | Description |
-|---|---|---|
-| **Context** | `prepare_task_context` | Token-optimal context bundle for a task |
-| **Indexing** | `index_repository` | Build the knowledge graph |
-| | `reindex_changed` | Incremental update for changed files |
-| **Search** | `search_symbol` | Find any symbol by name/pattern |
-| | `search_code` | BM25 full-text code search |
-| | `hybrid_search` | BM25 + vector search with RRF |
-| | `find_similar` | Semantically similar code fragments |
-| **Graph** | `get_callers` / `get_callees` | Incoming/outgoing call chains |
-| | `get_dependents` / `get_imports` | Dependency edges |
-| | `impact_analysis` | Blast-radius before touching a file |
-| | `find_path` | Call path between two symbols |
-| | `query_graph` | Cypher-like graph queries |
-| **Git & Quality** | `git_archaeology` | Why does this code exist? |
-| | `get_hotspots` | Churn × complexity debt map |
-| | `index_git_history` | Index full commit history |
-| **Architecture** | `manage_adr` | CRUD architectural decisions |
-| | `check_boundaries` | Detect import boundary violations |
-| | `suggest_boundaries` | Auto-generate rules from clusters |
-| | `get_clusters` | Leiden community detection |
-| **Memory** | `memory_store` / `memory_search` | Persistent project notes |
-| | `session_remember` / `session_recall` | Short-term session memory |
-| **Projects** | `list_projects` | All indexed projects |
-| | `project_overview` | Graph stats and summary |
-| | `get_architecture` | High-level architectural view |
+These are the actual tools your AI agent can call:
+
+### Indexing
+
+| Tool | What it does |
+|---|---|
+| `index_repository` | Parse and index an entire codebase |
+| `reindex_changed` | Incrementally update only changed files |
+| `index_git_history` | Index git commit history (enables hotspots and archaeology) |
+
+### Search
+
+| Tool | What it does |
+|---|---|
+| `search_symbol` | Find symbols by name or pattern |
+| `search_code` | Full-text code search (BM25) |
+| `semantic_search` | Vector similarity search using local embeddings |
+| `hybrid_search` | Combined BM25 + vector search with Reciprocal Rank Fusion |
+| `find_similar` | Find structurally similar functions |
+| `find_symbol_everywhere` | Search across all indexed projects |
+
+### Graph Traversal
+
+| Tool | What it does |
+|---|---|
+| `get_callers` | Who calls this function? |
+| `get_callees` | What does this function call? |
+| `get_imports` | What does a file import? |
+| `get_dependents` | What depends on this symbol? |
+| `impact_analysis` | Blast radius — what breaks if you change this? |
+| `find_path` | Find the call path between two symbols |
+| `find_dead_code` | Find potentially unused functions |
+
+### Context & Editing
+
+| Tool | What it does |
+|---|---|
+| `prepare_task_context` | Given a task description, assembles relevant symbols, deps, and memories within a token budget |
+| `get_context` | Get a symbol with its callers and callees |
+| `get_edit_context` | Everything needed before editing a symbol |
+| `get_working_set` | Most-accessed symbols (useful for session preloading) |
+
+### Architecture
+
+| Tool | What it does |
+|---|---|
+| `project_overview` | High-level project statistics |
+| `get_architecture` | Languages, entry points, hotspots, dead code |
+| `get_file_structure` | Structural overview of a single file |
+| `get_clusters` | Leiden community detection — groups files into modules |
+| `check_boundaries` | Detect import boundary violations |
+| `suggest_boundaries` | Auto-generate boundary rules from clusters |
+| `generate_wiki` | Generate a Markdown architecture wiki |
+| `get_route_map` | List HTTP routes and their handlers |
+| `query_graph` | Run openCypher-like queries on the graph |
+
+### Git & Quality
+
+| Tool | What it does |
+|---|---|
+| `git_archaeology` | Why does this code exist? Commit history narrative for a symbol |
+| `get_hotspots` | Technical debt: high complexity × high git churn |
+| `technical_debt_map` | File-level debt ranking |
+| `get_contracts` | What tests verify this symbol? |
+| `get_recent_semantic_changes` | What changed structurally in the last N hours? |
+
+### Memory
+
+| Tool | What it does |
+|---|---|
+| `memory_store` | Store a persistent note, fact, or decision |
+| `memory_search` | Search stored memories |
+| `memory_list` | List memories by kind |
+| `memory_delete` | Delete a memory |
+| `session_remember` | Store a key-value fact in the current session |
+| `session_recall` | Recall a session fact |
+
+### Project Management
+
+| Tool | What it does |
+|---|---|
+| `list_projects` | List all indexed projects |
+| `delete_project` | Remove a project from the index |
+| `manage_adr` | CRUD for Architecture Decision Records |
+| `link_cross_project` | Create dependency edges between projects |
+| `get_stats` | Detailed statistics about indexed data |
+| `get_status` | Server health and index status |
+| `get_pagerank` | PageRank authority score for a node |
 
 ---
 
@@ -180,10 +166,12 @@ An optional `PreToolUse` hook that automatically **blocks edits to architectural
 Requires [Rust](https://rustup.rs/):
 
 ```bash
-git clone https://github.com/codebase-synapse/index.git
-cd index
+git clone https://github.com/iwiels/codebase-synapse.git
+cd codebase-synapse
 cargo build --release
 ```
+
+Run tests:
 
 ```bash
 cargo test --no-default-features
@@ -193,4 +181,4 @@ cargo test --no-default-features
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+MIT

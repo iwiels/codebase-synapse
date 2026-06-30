@@ -79,8 +79,6 @@ git2 = { version = "0.19", default-features = false }
 # Compression for artifact export
 zstd = { version = "0.13", features = [] }
 
-# Interactive TUI for install command
-inquire = "0.7"
 
 [dev-dependencies]
 tempfile = "3"

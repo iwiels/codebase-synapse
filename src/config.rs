@@ -36,12 +36,7 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
-    /// Detect and configure AI agents (Claude Code, Cursor, Zed, etc.) to use this MCP server
-    Install {
-        /// Only detect, don't write any config files
-        #[arg(long)]
-        dry_run: bool,
-    },
+
     /// Export or import the indexed graph as a compressed artifact
     Artifact {
         #[command(subcommand)]

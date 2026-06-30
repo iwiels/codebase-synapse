@@ -17,9 +17,7 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match &cli.command {
-        Some(Commands::Install { dry_run }) => {
-            return cli::install::Installer::run(*dry_run);
-        }
+
         Some(Commands::Artifact { action }) => {
             let config = Arc::new(codebase_synapse::Config::from_cli(&cli)?);
             let conn = Arc::new(Mutex::new(db::open(&config.db_path())?));
