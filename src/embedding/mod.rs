@@ -28,6 +28,7 @@ impl Embedder for NoopEmbedder {
 /// until the first `embed()` call. This keeps server startup instant:
 /// tools like `list_projects` that never touch embeddings stay fast,
 /// and only the first semantic-search call pays the model-load cost.
+#[derive(Default)]
 pub struct LazyEmbedder {
     inner: OnceLock<Arc<dyn Embedder>>,
 }
