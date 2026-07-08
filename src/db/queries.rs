@@ -184,6 +184,9 @@ pub fn fts_search(
     query: &str,
     limit: i64,
 ) -> Result<Vec<(Node, f64)>> {
+    // Escape the query for FTS5 to prevent syntax errors with special chars like '?'
+    let safe_query = format!("\"{}\"", query.replace("\"", "\"\""));
+    
     let mut stmt = conn.prepare(
         "SELECT n.id, n.project_id, n.file_path, n.kind, n.name, n.qualified_name, n.signature,
             n.doc_comment, n.start_line, n.end_line, n.complexity, n.is_exported, n.content_hash,
@@ -195,7 +198,7 @@ pub fn fts_search(
          ORDER BY bm25(nodes_fts)
          LIMIT ?3",
     )?;
-    let rows = stmt.query_map(params![project_id, query, limit], |row| {
+    let rows = stmt.query_map(params![project_id, safe_query, limit], |row| {
         let node = row_to_node(row)?;
         let score: f64 = row.get(17)?;
         Ok((node, score))
