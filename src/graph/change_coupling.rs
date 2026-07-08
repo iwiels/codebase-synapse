@@ -33,7 +33,14 @@ pub fn detect_and_store(
     // Find all pairs of nodes that co-change in the same commit
     // Only consider nodes that represent files (kind = 'file')
     let mut pairs = conn.prepare(
-        "SELECT cnl1.commit_hash, n1.id AS src_id, n1.file_path AS src_path,
+        "WITH filtered_commits AS (
+            SELECT commit_hash
+            FROM commit_node_links
+            WHERE project_id = ?1
+            GROUP BY commit_hash
+            HAVING COUNT(node_id) <= 50
+         )
+         SELECT cnl1.commit_hash, n1.id AS src_id, n1.file_path AS src_path,
                 n2.id AS dst_id, n2.file_path AS dst_path
          FROM commit_node_links cnl1
          JOIN commit_node_links cnl2
@@ -41,7 +48,7 @@ pub fn detect_and_store(
            AND cnl1.node_id < cnl2.node_id
          JOIN nodes n1 ON n1.id = cnl1.node_id AND n1.project_id = ?1 AND n1.kind = 'file'
          JOIN nodes n2 ON n2.id = cnl2.node_id AND n2.project_id = ?1 AND n2.kind = 'file'
-         WHERE cnl1.project_id = ?1",
+         WHERE cnl1.project_id = ?1 AND cnl1.commit_hash IN filtered_commits",
     )?;
 
     let mut pair_counts: std::collections::HashMap<(i64, i64, String, String), i64> =
