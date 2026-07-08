@@ -1,6 +1,6 @@
 {
   "name": "@codebase-synapse/index-win32-x64",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "os": [
     "win32"
   ],
