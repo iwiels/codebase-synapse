@@ -60,8 +60,11 @@ fn main() -> anyhow::Result<()> {
     ));
     info!("Database opened at {}", config.db_path().display());
 
+    // Lazy embedder: the BERT model (download + build) loads only on the
+    // first semantic-search call, keeping server startup instant. Tools like
+    // `list_projects` that never touch embeddings stay fast.
     let embedder = embedding::create_embedder();
-    info!("Embedder initialized ({} dims)", embedder.dimensions());
+    info!("Embedder ready (lazy load on first use)");
 
     let indexer = Arc::new(Indexer::new(config.clone(), conn.clone()));
 
