@@ -672,7 +672,8 @@ impl ToolRegistry {
                             "type": "object",
                             "properties": {
                                 "file_path": {"type": "string", "description": "Relative path of the target file to modify"},
-                                "symbol_name": {"type": "string", "description": "Optional name of the specific function, class, struct, or method to modify"}
+                                "symbol_name": {"type": "string", "description": "Optional name of the specific function, class, struct, or method to modify"},
+                                "change_intent": {"type": "string", "description": "Optional natural-language intent (commit/PR description). Enables intent-aware precision pruning of false-positive recommendations (e.g. 'fix typo in docs' reduces coupling risk)."}
                             },
                             "required": ["file_path"]
                         }
@@ -683,19 +684,49 @@ impl ToolRegistry {
             Arc::new(move |params| {
                 let pname = params["project"].as_str().unwrap_or("default");
                 let targets_val = params["targets"].as_array().ok_or_else(|| anyhow::anyhow!("Missing targets"))?;
-                
+
                 let mut targets = Vec::new();
+                let mut intents = Vec::new();
                 for val in targets_val {
                     let file_path = val["file_path"].as_str().ok_or_else(|| anyhow::anyhow!("Target missing file_path"))?.to_string();
                     let symbol_name = val["symbol_name"].as_str().map(String::from);
+                    let change_intent = val["change_intent"].as_str().map(String::from);
                     targets.push(crate::graph::risk::PlanTarget { file_path, symbol_name });
+                    intents.push(change_intent);
                 }
 
                 Self::conn(&c_risk, |conn| {
                     let project = db::queries::get_project(conn, pname)?.ok_or_else(|| anyhow::anyhow!("Project not found"))?;
                     let evaluator = crate::graph::risk::RiskEvaluator::new(conn);
-                    let report = evaluator.evaluate_plan_risk(project.id, &targets)?;
+                    let report = evaluator.evaluate_plan_risk_with_intent(project.id, &targets, &intents)?;
                     Ok(json!(report))
+                })
+            }),
+        );
+
+        let c_coupling = conn.clone();
+        self.register(
+            "detect_change_coupling",
+            "Mines git commit history to detect files that frequently change together (evolutionary coupling). Stores results as graph edges and returns detected coupling patterns.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "project": {"type": "string"},
+                    "min_co_changes": {"type": "integer", "description": "Minimum number of co-changes to consider a coupling (default: 3)", "default": 3}
+                },
+                "required": ["project"]
+            }),
+            Arc::new(move |params| {
+                let pname = params["project"].as_str().unwrap_or("default");
+                let min_co = params["min_co_changes"].as_i64().unwrap_or(3);
+                Self::conn(&c_coupling, |conn| {
+                    let project = db::queries::get_project(conn, pname)?.ok_or_else(|| anyhow::anyhow!("Project not found"))?;
+                    let couplings = crate::graph::change_coupling::detect_and_store(conn, project.id, min_co)?;
+                    Ok(json!({
+                        "project": pname,
+                        "couplings_found": couplings.len(),
+                        "couplings": couplings
+                    }))
                 })
             }),
         );

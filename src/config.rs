@@ -36,7 +36,6 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
-
     /// Export or import the indexed graph as a compressed artifact
     Artifact {
         #[command(subcommand)]
