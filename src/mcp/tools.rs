@@ -657,6 +657,48 @@ impl ToolRegistry {
                 })
             }),
         );
+
+        let c_risk = conn.clone();
+        self.register(
+            "evaluate_plan_risk",
+            "Simulates the regression risk of a proposed plan of changes by analyzing code dependencies, PageRank centrality, Git hotspots, and test contracts.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "project": {"type": "string"},
+                    "targets": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "file_path": {"type": "string", "description": "Relative path of the target file to modify"},
+                                "symbol_name": {"type": "string", "description": "Optional name of the specific function, class, struct, or method to modify"}
+                            },
+                            "required": ["file_path"]
+                        }
+                    }
+                },
+                "required": ["project", "targets"]
+            }),
+            Arc::new(move |params| {
+                let pname = params["project"].as_str().unwrap_or("default");
+                let targets_val = params["targets"].as_array().ok_or_else(|| anyhow::anyhow!("Missing targets"))?;
+                
+                let mut targets = Vec::new();
+                for val in targets_val {
+                    let file_path = val["file_path"].as_str().ok_or_else(|| anyhow::anyhow!("Target missing file_path"))?.to_string();
+                    let symbol_name = val["symbol_name"].as_str().map(String::from);
+                    targets.push(crate::graph::risk::PlanTarget { file_path, symbol_name });
+                }
+
+                Self::conn(&c_risk, |conn| {
+                    let project = db::queries::get_project(conn, pname)?.ok_or_else(|| anyhow::anyhow!("Project not found"))?;
+                    let evaluator = crate::graph::risk::RiskEvaluator::new(conn);
+                    let report = evaluator.evaluate_plan_risk(project.id, &targets)?;
+                    Ok(json!(report))
+                })
+            }),
+        );
     }
 
     fn register_memory_tools(&mut self, conn: &SharedConn, session: &Arc<Mutex<SessionMemory>>) {

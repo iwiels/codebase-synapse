@@ -15,3 +15,5 @@ pub use leiden::{compute_clusters, ClusterReport, LeidenConfig};
 pub use pagerank::{compute_pagerank, PageRankConfig};
 pub use traversal::GraphTraversal;
 pub use wiki::{generate_wiki, render_wiki, WikiConfig};
+pub mod risk;
+pub use risk::{RiskEvaluator, PlanTarget, PlanRiskReport, TargetRiskReport, CounterfactualStrategy};

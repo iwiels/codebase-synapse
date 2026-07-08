@@ -650,7 +650,7 @@ pub fn get_project_stats(conn: &Connection, project_id: i64) -> Result<HashMap<S
 
 // ── Row mappers ──
 
-fn row_to_node(row: &rusqlite::Row) -> rusqlite::Result<Node> {
+pub fn row_to_node(row: &rusqlite::Row) -> rusqlite::Result<Node> {
     Ok(Node {
         id: row.get(0)?,
         project_id: row.get(1)?,
