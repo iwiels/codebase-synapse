@@ -35,7 +35,7 @@ Then add this JSON block to your AI client's configuration:
   "mcpServers": {
     "codebase-synapse": {
       "command": "codebase-synapse",
-      "args": ["--project-root", "."]
+      "args": []
     }
   }
 }
@@ -50,7 +50,7 @@ Add this JSON block to the configuration file of your AI client:
   "mcpServers": {
     "codebase-synapse": {
       "command": "npx",
-      "args": ["-y", "codebase-synapse", "--project-root", "."]
+      "args": ["-y", "codebase-synapse"]
     }
   }
 }
