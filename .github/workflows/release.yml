@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   build:
@@ -92,7 +93,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          registry-url: https://registry.npmjs.org
 
       - name: Download all binary artifacts
         uses: actions/download-artifact@v4
@@ -135,7 +135,7 @@ jobs:
         run: |
           for pkg in linux-x64 linux-arm64 darwin-x64 darwin-arm64 win32-x64 win32-arm64; do
             cd npm/platform-packages/$pkg
-            if ! out=$(npm publish --access public 2>&1); then
+            if ! out=$(npm publish --access public --provenance 2>&1); then
               if echo "$out" | grep -qE "EPUBLISHCONFLICT|cannot publish over the previously published versions"; then
                 echo "Warning: $pkg already published for version $VERSION — skipping"
               else
@@ -147,13 +147,11 @@ jobs:
             fi
             cd ../../..
           done
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish main package
         run: |
           cd npm
-          if ! out=$(npm publish --access public 2>&1); then
+          if ! out=$(npm publish --access public --provenance 2>&1); then
             if echo "$out" | grep -qE "EPUBLISHCONFLICT|cannot publish over the previously published versions"; then
               echo "Warning: main package already published for version $VERSION — skipping"
             else
@@ -163,8 +161,6 @@ jobs:
           else
             echo "$out"
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Prepare release assets
         run: |
