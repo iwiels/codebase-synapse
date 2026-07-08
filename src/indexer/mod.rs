@@ -184,9 +184,14 @@ impl Indexer {
 
         builder.update_counts()?;
         tx.commit()?;
+        drop(conn);
 
         // Auto-index git history (up to 1000 recent commits)
         {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("DB lock poisoned: {}", e))?;
             let arch = crate::git::GitArchaeologist::new(&conn, project_id);
             match arch.index_history(repo_path, 1000) {
                 Ok(n) => info!("Auto-indexed {} git commits", n),
@@ -196,31 +201,49 @@ impl Indexer {
 
         // Resolve function calls (calls edges)
         info!("Resolving lightweight call graph...");
-        calls::resolve_project_calls(&conn, project_id)?;
+        {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("DB lock poisoned: {}", e))?;
+            calls::resolve_project_calls(&conn, project_id)?;
+        }
 
         // Resolve behavioral contracts (test → symbol edges)
-        Self::resolve_test_contracts(&conn, project_id, repo_path)?;
+        {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("DB lock poisoned: {}", e))?;
+            Self::resolve_test_contracts(&conn, project_id, repo_path)?;
+        }
 
         // Find structurally similar functions/methods and link them with SIMILAR_TO edges
         info!("Running structural code similarity detection...");
-        match crate::similarity::find_similar_pairs(&conn, project_id, 0.70) {
-            Ok(pairs) => {
-                info!("Found {} structurally similar function pairs", pairs.len());
-                for (id1, id2, score) in pairs {
-                    let metadata = serde_json::json!({ "jaccard_score": score }).to_string();
-                    if let Err(e) = db::queries::insert_edge(
-                        &conn,
-                        project_id,
-                        id1,
-                        id2,
-                        "similar_to",
-                        Some(&metadata),
-                    ) {
-                        warn!("Failed to insert similarity edge: {}", e);
+        {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("DB lock poisoned: {}", e))?;
+            match crate::similarity::find_similar_pairs(&conn, project_id, 0.70) {
+                Ok(pairs) => {
+                    info!("Found {} structurally similar function pairs", pairs.len());
+                    for (id1, id2, score) in pairs {
+                        let metadata = serde_json::json!({ "jaccard_score": score }).to_string();
+                        if let Err(e) = db::queries::insert_edge(
+                            &conn,
+                            project_id,
+                            id1,
+                            id2,
+                            "similar_to",
+                            Some(&metadata),
+                        ) {
+                            warn!("Failed to insert similarity edge: {}", e);
+                        }
                     }
                 }
+                Err(e) => warn!("Similarity detection failed: {}", e),
             }
-            Err(e) => warn!("Similarity detection failed: {}", e),
         }
 
         info!(
@@ -232,6 +255,10 @@ impl Indexer {
 
         // Step 6: Compute PageRank (warm-start from previous values)
         {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("DB lock poisoned: {}", e))?;
             let pr_config = crate::graph::pagerank::PageRankConfig::default();
             if let Err(e) = crate::graph::compute_pagerank(&conn, project_id, &pr_config) {
                 warn!("PageRank computation failed (non-fatal): {}", e);
@@ -242,6 +269,10 @@ impl Indexer {
 
         // Step 7: Compute Leiden clusters
         {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| anyhow::anyhow!("DB lock poisoned: {}", e))?;
             let leiden_cfg = crate::graph::LeidenConfig::default();
             match crate::graph::compute_clusters(&conn, project_id, &leiden_cfg) {
                 Ok(r) => info!(
