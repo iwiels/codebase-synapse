@@ -18,7 +18,30 @@ codebase-synapse parses your code with [Tree-sitter](https://tree-sitter.github.
 
 ## Setup
 
-### 1. Add to your MCP client config
+You can configure `codebase-synapse` in your AI client using one of the following methods.
+
+### Option A: Global Installation (Recommended for Performance)
+
+Installing the package globally avoids registry check delays and OIDC network latency from `npx`:
+
+```bash
+npm install -g codebase-synapse
+```
+
+Then add this JSON block to your AI client's configuration:
+
+```json
+{
+  "mcpServers": {
+    "codebase-synapse": {
+      "command": "codebase-synapse",
+      "args": ["--project-root", "."]
+    }
+  }
+}
+```
+
+### Option B: Quick Start (via `npx` - No installation needed)
 
 Add this JSON block to the configuration file of your AI client:
 
@@ -35,7 +58,7 @@ Add this JSON block to the configuration file of your AI client:
 
 > **Note:** On Windows, use `"command": "npx.cmd"` instead of `"npx"`.
 
-### Where to paste it
+### Where to paste the configuration
 
 | Client | Config file location |
 |---|---|
@@ -135,6 +158,8 @@ These are the actual tools your AI agent can call:
 | `technical_debt_map` | File-level debt ranking |
 | `get_contracts` | What tests verify this symbol? |
 | `get_recent_semantic_changes` | What changed structurally in the last N hours? |
+| `detect_change_coupling` | Mines Git history to detect logical co-change couplings between files |
+| `evaluate_plan_risk` | Computes FMEA risk scores and orders proposed changes (supports RIPPLE intent-aware pruning) |
 
 ### Memory
 
