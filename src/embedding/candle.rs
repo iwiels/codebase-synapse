@@ -92,9 +92,13 @@ impl Embedder for CandleEmbedder {
 
             let (_batch_size, _seq_len, _hidden) = output.dims3().unwrap_or((1, 0, self.dim));
             let sum_hidden = output.sum_keepdim(1)?;
-            let count = attention_mask.sum_keepdim(1)?.unsqueeze(2)?;
+            let count = attention_mask
+                .to_dtype(candle_core::DType::F32)?
+                .sum_keepdim(1)?
+                .unsqueeze(2)?;
+            let count = count.broadcast_as(sum_hidden.shape())?;
 
-            let pooled = (sum_hidden / count)?.squeeze(1)?;
+            let pooled = (sum_hidden / count)?.squeeze(1)?.squeeze(0)?;
             let embedding = pooled.to_vec1::<f32>()?;
             results.push(embedding);
         }

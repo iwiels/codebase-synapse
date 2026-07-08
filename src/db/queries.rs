@@ -184,8 +184,15 @@ pub fn fts_search(
     query: &str,
     limit: i64,
 ) -> Result<Vec<(Node, f64)>> {
-    // Escape the query for FTS5 to prevent syntax errors with special chars like '?'
-    let safe_query = format!("\"{}\"", query.replace("\"", "\"\""));
+    // Strip special FTS5 characters to prevent syntax errors while allowing normal keyword matching
+    // instead of wrapping in quotes which forces an exact phrase match.
+    let safe_query: String = query
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { ' ' })
+        .collect();
+    let words: Vec<&str> = safe_query.split_whitespace().collect();
+    let final_query = words.join(" OR ");
+
     
     let mut stmt = conn.prepare(
         "SELECT n.id, n.project_id, n.file_path, n.kind, n.name, n.qualified_name, n.signature,
@@ -198,7 +205,7 @@ pub fn fts_search(
          ORDER BY bm25(nodes_fts)
          LIMIT ?3",
     )?;
-    let rows = stmt.query_map(params![project_id, safe_query, limit], |row| {
+    let rows = stmt.query_map(params![project_id, final_query, limit], |row| {
         let node = row_to_node(row)?;
         let score: f64 = row.get(17)?;
         Ok((node, score))
