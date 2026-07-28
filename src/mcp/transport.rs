@@ -11,6 +11,41 @@ static SHUTDOWN: LazyLock<AtomicBool> = LazyLock::new(|| AtomicBool::new(false))
 
 use super::protocol::*;
 use super::tools::ToolRegistry;
+use std::sync::Mutex;
+
+/// Thread-safe sender for MCP progress notifications.
+/// Writes JSON-RPC notifications directly to stdout.
+pub struct ProgressSender {
+    writer: Mutex<Box<dyn Write + Send>>,
+}
+
+impl ProgressSender {
+    pub fn new() -> Self {
+        Self {
+            writer: Mutex::new(Box::new(std::io::stdout())),
+        }
+    }
+
+    /// Send a progress notification to the MCP client.
+    /// `progress_token` comes from the original request's `_meta.progressToken`.
+    /// `progress` is current step, `total` is total steps.
+    pub fn send(&self, progress_token: &str, progress: usize, total: usize, message: &str) {
+        let notification = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/progress",
+            "params": {
+                "progressToken": progress_token,
+                "progress": progress,
+                "total": total,
+                "message": message
+            }
+        });
+        if let Ok(mut w) = self.writer.lock() {
+            let _ = writeln!(w, "{}", notification);
+            let _ = w.flush();
+        }
+    }
+}
 
 pub struct McpTransport {
     registry: Arc<ToolRegistry>,

@@ -9,4 +9,4 @@ pub mod tools;
 pub mod transport;
 
 pub use tools::ToolRegistry;
-pub use transport::McpTransport;
+pub use transport::{McpTransport, ProgressSender};

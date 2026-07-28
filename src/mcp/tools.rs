@@ -23,6 +23,7 @@ type SharedConn = Arc<Mutex<Connection>>;
 pub struct ToolRegistry {
     tools: HashMap<String, ToolDef>,
     handlers: HashMap<String, ToolHandler>,
+    progress: Arc<crate::mcp::transport::ProgressSender>,
 }
 
 struct ToolDef {
@@ -37,10 +38,12 @@ impl ToolRegistry {
         config: Arc<Config>,
         indexer: Arc<Indexer>,
         embedder: Arc<dyn Embedder>,
+        progress: Arc<crate::mcp::transport::ProgressSender>,
     ) -> Self {
         let mut registry = Self {
             tools: HashMap::new(),
             handlers: HashMap::new(),
+            progress: progress.clone(),
         };
 
         let session = Arc::new(Mutex::new(SessionMemory::new(100)));
@@ -1147,11 +1150,13 @@ mod tests {
         });
         let indexer = Arc::new(Indexer::new(config.clone(), conn.clone()));
         let embedder = Arc::new(crate::embedding::NoopEmbedder);
+        let progress = Arc::new(crate::mcp::transport::ProgressSender::new());
         let registry = ToolRegistry::new(
             conn.clone(),
             config.clone(),
             indexer.clone(),
             embedder.clone(),
+            progress,
         );
         (registry, conn, config, indexer, embedder)
     }

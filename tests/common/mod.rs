@@ -44,11 +44,13 @@ pub fn setup_test_server() -> TestServer {
 
     let indexer = Arc::new(Indexer::new(config.clone(), conn.clone()));
     let embedder = Arc::new(MockEmbedder);
+    let progress = Arc::new(codebase_synapse::mcp::ProgressSender::new());
     let registry = Arc::new(ToolRegistry::new(
         conn.clone(),
         config.clone(),
         indexer.clone(),
         embedder,
+        progress,
     ));
     let transport = McpTransport::new(registry.clone());
 

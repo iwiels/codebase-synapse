@@ -28,6 +28,7 @@ type IndexResult = Result<Option<(String, String, String, extractors::Extraction
 pub struct Indexer {
     _config: Arc<Config>,
     conn: Arc<std::sync::Mutex<Connection>>,
+    progress: Option<Arc<crate::mcp::transport::ProgressSender>>,
 }
 
 impl Indexer {
@@ -35,6 +36,18 @@ impl Indexer {
         Self {
             _config: config,
             conn,
+            progress: None,
+        }
+    }
+
+    pub fn with_progress(mut self, progress: Arc<crate::mcp::transport::ProgressSender>) -> Self {
+        self.progress = Some(progress);
+        self
+    }
+
+    fn emit_progress(&self, step: usize, total: usize, message: &str) {
+        if let Some(ref p) = self.progress {
+            p.send("index_repository", step, total, message);
         }
     }
 
@@ -63,6 +76,7 @@ impl Indexer {
         let files = walker::walk_files(path)
             .with_context(|| format!("Failed to walk files in {}", repo_path))?;
         info!("Found {} files to index", files.len());
+        self.emit_progress(1, 7, &format!("Found {} files, parsing...", files.len()));
 
         // Step 1: Fetch all existing file states to avoid locking during parallel hashing
         let existing_states =
@@ -185,6 +199,7 @@ impl Indexer {
         builder.update_counts()?;
         tx.commit()?;
         drop(conn);
+        self.emit_progress(2, 7, &format!("Indexed {} files, {} skipped. Indexing git history...", indexed, skipped));
 
         // Auto-index git history (up to 1000 recent commits)
         {
@@ -198,6 +213,7 @@ impl Indexer {
                 Err(e) => warn!("Git indexing skipped: {}", e),
             }
         }
+        self.emit_progress(3, 7, "Resolving call graph...");
 
         // Resolve function calls (calls edges)
         info!("Resolving lightweight call graph...");
@@ -208,6 +224,7 @@ impl Indexer {
                 .map_err(|e| anyhow::anyhow!("DB lock poisoned: {}", e))?;
             calls::resolve_project_calls(&conn, project_id)?;
         }
+        self.emit_progress(4, 7, "Resolving test contracts...");
 
         // Resolve behavioral contracts (test → symbol edges)
         {
@@ -217,6 +234,7 @@ impl Indexer {
                 .map_err(|e| anyhow::anyhow!("DB lock poisoned: {}", e))?;
             Self::resolve_test_contracts(&conn, project_id, repo_path)?;
         }
+        self.emit_progress(5, 7, "Detecting code similarity...");
 
         // Find structurally similar functions/methods and link them with SIMILAR_TO edges
         info!("Running structural code similarity detection...");
@@ -252,6 +270,7 @@ impl Indexer {
             skipped,
             files.len()
         );
+        self.emit_progress(6, 7, "Computing PageRank and clusters...");
 
         // Step 6: Compute PageRank (warm-start from previous values)
         {
@@ -282,6 +301,7 @@ impl Indexer {
                 Err(e) => warn!("Leiden clustering failed (non-fatal): {}", e),
             }
         }
+        self.emit_progress(7, 7, "Indexing complete!");
 
         Ok(())
     }
