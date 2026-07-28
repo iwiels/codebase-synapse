@@ -1,6 +1,6 @@
 # codebase-synapse
 
-An MCP server that indexes your codebase into a local knowledge graph.
+An MCP server that indexes your codebase into a local knowledge graph, and provides intelligent safety hooks and context for your AI agent.
 
 [![npm](https://img.shields.io/npm/v/codebase-synapse.svg)](https://www.npmjs.com/package/codebase-synapse)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -8,21 +8,35 @@ An MCP server that indexes your codebase into a local knowledge graph.
 
 ---
 
-## What It Does
+## 🛡️ The Hero Feature: `codebase-guard`
 
-codebase-synapse parses your code with [Tree-sitter](https://tree-sitter.github.io/tree-sitter/), builds a knowledge graph of all functions, classes, imports, and call relationships, and stores it in a local SQLite database. Your AI agent queries the graph via MCP instead of reading raw files.
+**Your AI agent is about to confidently edit a critical architectural hub. `codebase-guard` stops it.**
 
-**Supported languages:** Rust, TypeScript, JavaScript, Python, Go, Java, C, C++, C#, PHP.
+Unlike other MCP servers that just provide search, `codebase-synapse` includes a native safety hook (`codebase-guard`) for Claude Code and other agents. It blocks writes to high-impact files (high PageRank, large blast radius) automatically until the agent explicitly runs an `impact_analysis` to understand what they are about to break.
+
+```json
+// Example PreToolUse rejection from codebase-guard
+{
+  "behavior": "block",
+  "message": "⚠️ HIGH-IMPACT FILE: `src/auth_middleware.rs` (PageRank: 0.12, Blast Radius: 47 files)\n\nBefore editing this architectural hub:\n1. Call `impact_analysis` with this node's ID\n2. Review the affected files listed\n3. This block lifts automatically after impact_analysis runs"
+}
+```
+
+### Why codebase-synapse?
+
+1. **Safety First:** `codebase-guard` acts as an automated senior engineer reviewing your agent's blast radius.
+2. **Deep Intelligence:** FMEA Risk Analysis, PageRank authority scoring, Leiden clustering, and Git archaeology (who wrote this and why?).
+3. **Token Efficiency:** A single structural query (`explain_code`) in <1ms replaces the agent blindly reading 40 files to understand dependencies.
 
 ---
 
-## Setup
+## 🚀 Setup
 
 You can configure `codebase-synapse` in your AI client using one of the following methods.
 
 ### Option A: Global Installation (Recommended for Performance)
 
-Installing the package globally avoids registry check delays and OIDC network latency from `npx`:
+Installing the package globally avoids registry check delays and network latency from `npx`:
 
 ```bash
 npm install -g codebase-synapse
@@ -58,7 +72,21 @@ Add this JSON block to the configuration file of your AI client:
 
 > **Note:** On Windows, use `"command": "npx.cmd"` instead of `"npx"`.
 
-### Where to paste the configuration
+### Configuring `codebase-guard` (Claude Code)
+
+To enable the safety hook in Claude Code, add this to your project's `.claude.json`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": "codebase-guard"
+  }
+}
+```
+
+*(Ensure you have `codebase-guard` installed or compiled in your path).*
+
+### Where to paste the MCP configuration
 
 | Client | Config file location |
 |---|---|
@@ -68,35 +96,16 @@ Add this JSON block to the configuration file of your AI client:
 | VS Code | `.vscode/mcp.json` (in your project root) |
 | Zed | `~/.config/zed/settings.json` |
 
-### 2. Restart your AI agent
-
-After saving the config, restart your AI client. The server starts automatically when the agent needs it.
-
-### 3. Index your project
-
-Tell your AI agent:
-
-> "Index this project"
-
-The agent will call `index_repository` and the knowledge graph gets built. After that, all tools are available.
+After saving the config, restart your AI client. Tell your AI agent: **"Index this project"**.
 
 ---
 
-## How It Works
+## 🛠️ MCP Tools Reference (40+ Tools)
 
-1. **npx downloads the binary** — a native Rust binary for your platform (Windows, macOS, Linux). No compilation needed.
-2. **The server starts via stdio** — your AI client launches it as a child process and communicates over stdin/stdout using the MCP protocol.
-3. **Data is stored in `~/.codebase-synapse/`** — a SQLite database with the knowledge graph, embeddings, and memory. Nothing is written inside your project directory.
-4. **Your agent calls tools** — instead of reading files, the agent queries the graph for callers, callees, impact analysis, etc.
-
----
-
-## MCP Tools
-
-These are the actual tools your AI agent can call:
+<details>
+<summary>Click to view the full list of available MCP tools</summary>
 
 ### Indexing
-
 | Tool | What it does |
 |---|---|
 | `index_repository` | Parse and index an entire codebase |
@@ -104,7 +113,6 @@ These are the actual tools your AI agent can call:
 | `index_git_history` | Index git commit history (enables hotspots and archaeology) |
 
 ### Search
-
 | Tool | What it does |
 |---|---|
 | `search_symbol` | Find symbols by name or pattern |
@@ -115,7 +123,6 @@ These are the actual tools your AI agent can call:
 | `find_symbol_everywhere` | Search across all indexed projects |
 
 ### Graph Traversal
-
 | Tool | What it does |
 |---|---|
 | `get_callers` | Who calls this function? |
@@ -127,16 +134,17 @@ These are the actual tools your AI agent can call:
 | `find_dead_code` | Find potentially unused functions |
 
 ### Context & Editing
-
 | Tool | What it does |
 |---|---|
-| `prepare_task_context` | Given a task description, assembles relevant symbols, deps, and memories within a token budget |
+| `prepare_task_context` | Assembles relevant symbols, deps, and memories within a token budget |
 | `get_context` | Get a symbol with its callers and callees |
 | `get_edit_context` | Everything needed before editing a symbol |
 | `get_working_set` | Most-accessed symbols (useful for session preloading) |
+| `explain_code` | Synthesizes graph + git + memory + ADRs into one explanation |
+| `suggest_tests` | Finds functions needing tests based on complexity and PageRank |
+| `plan_change` | FMEA risk-ordered change planning with test impact analysis |
 
 ### Architecture
-
 | Tool | What it does |
 |---|---|
 | `project_overview` | High-level project statistics |
@@ -150,7 +158,6 @@ These are the actual tools your AI agent can call:
 | `query_graph` | Run openCypher-like queries on the graph |
 
 ### Git & Quality
-
 | Tool | What it does |
 |---|---|
 | `git_archaeology` | Why does this code exist? Commit history narrative for a symbol |
@@ -162,7 +169,6 @@ These are the actual tools your AI agent can call:
 | `evaluate_plan_risk` | Computes FMEA risk scores and orders proposed changes (supports RIPPLE intent-aware pruning) |
 
 ### Memory
-
 | Tool | What it does |
 |---|---|
 | `memory_store` | Store a persistent note, fact, or decision |
@@ -173,7 +179,6 @@ These are the actual tools your AI agent can call:
 | `session_recall` | Recall a session fact |
 
 ### Project Management
-
 | Tool | What it does |
 |---|---|
 | `list_projects` | List all indexed projects |
@@ -184,9 +189,11 @@ These are the actual tools your AI agent can call:
 | `get_status` | Server health and index status |
 | `get_pagerank` | PageRank authority score for a node |
 
+</details>
+
 ---
 
-## Build from Source
+## 🔧 Build from Source
 
 Requires [Rust](https://rustup.rs/):
 
