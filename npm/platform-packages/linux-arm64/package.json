@@ -1,6 +1,6 @@
 {
   "name": "@codebase-synapse/index-linux-arm64",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "os": [
     "linux"
   ],
