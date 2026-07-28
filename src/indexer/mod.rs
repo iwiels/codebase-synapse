@@ -199,7 +199,14 @@ impl Indexer {
         builder.update_counts()?;
         tx.commit()?;
         drop(conn);
-        self.emit_progress(2, 7, &format!("Indexed {} files, {} skipped. Indexing git history...", indexed, skipped));
+        self.emit_progress(
+            2,
+            7,
+            &format!(
+                "Indexed {} files, {} skipped. Indexing git history...",
+                indexed, skipped
+            ),
+        );
 
         // Auto-index git history (up to 1000 recent commits)
         {

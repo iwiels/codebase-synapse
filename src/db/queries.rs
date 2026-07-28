@@ -193,7 +193,6 @@ pub fn fts_search(
     let words: Vec<&str> = safe_query.split_whitespace().collect();
     let final_query = words.join(" OR ");
 
-    
     let mut stmt = conn.prepare(
         "SELECT n.id, n.project_id, n.file_path, n.kind, n.name, n.qualified_name, n.signature,
             n.doc_comment, n.start_line, n.end_line, n.complexity, n.is_exported, n.content_hash,

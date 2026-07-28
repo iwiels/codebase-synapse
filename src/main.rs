@@ -67,7 +67,8 @@ fn main() -> anyhow::Result<()> {
     info!("Embedder ready (lazy load on first use)");
 
     let progress = Arc::new(codebase_synapse::mcp::ProgressSender::new());
-    let indexer = Arc::new(Indexer::new(config.clone(), conn.clone()).with_progress(progress.clone()));
+    let indexer =
+        Arc::new(Indexer::new(config.clone(), conn.clone()).with_progress(progress.clone()));
 
     if !cli.project_root.is_empty() {
         if let Some(ref project_root) = config.project_root {

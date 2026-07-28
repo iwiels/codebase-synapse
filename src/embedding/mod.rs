@@ -35,7 +35,9 @@ pub struct LazyEmbedder {
 
 impl LazyEmbedder {
     pub fn new() -> Self {
-        Self { inner: OnceLock::new() }
+        Self {
+            inner: OnceLock::new(),
+        }
     }
 
     fn get(&self) -> &Arc<dyn Embedder> {
