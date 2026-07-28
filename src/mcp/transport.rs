@@ -19,6 +19,12 @@ pub struct ProgressSender {
     writer: Mutex<Box<dyn Write + Send>>,
 }
 
+impl Default for ProgressSender {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProgressSender {
     pub fn new() -> Self {
         Self {

@@ -23,6 +23,7 @@ type SharedConn = Arc<Mutex<Connection>>;
 pub struct ToolRegistry {
     tools: HashMap<String, ToolDef>,
     handlers: HashMap<String, ToolHandler>,
+    #[allow(dead_code)]
     progress: Arc<crate::mcp::transport::ProgressSender>,
 }
 
