@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.iwiels/codebase-synapse",
+  "title": "codebase-synapse",
+  "description": "MCP server that indexes your codebase into a local knowledge graph using Tree-sitter. 40+ tools for semantic search, call graph traversal, impact analysis, git archaeology, and FMEA risk scoring. Includes codebase-guard — a PreToolUse hook that blocks AI agent writes to high-impact files until impact_analysis runs.",
+  "version": "0.1.12",
+  "repository": {
+    "url": "https://github.com/iwiels/codebase-synapse",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "codebase-synapse",
+      "version": "0.1.12",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}
