@@ -469,6 +469,36 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_fc_project ON file_clusters(project_id);
         CREATE INDEX IF NOT EXISTS idx_fc_cluster ON file_clusters(project_id, cluster_id);
+
+        CREATE TABLE IF NOT EXISTS test_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL,
+            node_id INTEGER,
+            test_name TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'unknown',
+            duration_ms INTEGER,
+            error_message TEXT,
+            run_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+            FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_tr_project ON test_results(project_id);
+        CREATE INDEX IF NOT EXISTS idx_tr_node ON test_results(node_id);
+
+        CREATE TABLE IF NOT EXISTS coverage_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL,
+            file_path TEXT NOT NULL,
+            lines_total INTEGER NOT NULL DEFAULT 0,
+            lines_covered INTEGER NOT NULL DEFAULT 0,
+            branches_total INTEGER DEFAULT 0,
+            branches_covered INTEGER DEFAULT 0,
+            format TEXT NOT NULL DEFAULT 'lcov',
+            imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_cr_project ON coverage_reports(project_id);
+        CREATE INDEX IF NOT EXISTS idx_cr_file ON coverage_reports(project_id, file_path);
         ",
     )?;
 
