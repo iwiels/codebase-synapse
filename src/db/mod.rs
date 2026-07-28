@@ -15,7 +15,7 @@ pub type SharedConnection = Mutex<Connection>;
 
 pub fn open(path: &Path) -> Result<Connection> {
     let conn = Connection::open(path)?;
-    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
+    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;")?;
     schema::migrate(&conn)?;
     Ok(conn)
 }
