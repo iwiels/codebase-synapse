@@ -733,6 +733,282 @@ impl ToolRegistry {
                 })
             }),
         );
+        // ─── explain_code ───
+        let c_explain = conn.clone();
+        self.register(
+            "explain_code",
+            "Synthesizes a comprehensive explanation of a symbol by combining: graph context (callers/callees), git history narrative (who created it, why it changed), related memories and decisions (ADRs), and structural metrics (complexity, PageRank). One call replaces 4-5 separate tool calls.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "project": {"type": "string"},
+                    "node_id": {"type": "integer"}
+                },
+                "required": ["project", "node_id"]
+            }),
+            Arc::new(move |params| {
+                let node_id = params["node_id"].as_i64().ok_or_else(|| anyhow::anyhow!("Missing node_id"))?;
+                let pname = params["project"].as_str().unwrap_or("default");
+                Self::conn(&c_explain, |conn| {
+                    let project = db::queries::get_project(conn, pname)?
+                        .ok_or_else(|| anyhow::anyhow!("Project not found"))?;
+
+                    // 1. Get the symbol itself
+                    let node = db::queries::get_node_by_id(conn, node_id)?
+                        .ok_or_else(|| anyhow::anyhow!("Node not found"))?;
+                    let _ = db::queries::record_node_access(conn, node_id, project.id);
+
+                    // 2. Graph context
+                    let traversal = GraphTraversal::new(conn);
+                    let callers = traversal.find_callers(node_id, 2).unwrap_or_default();
+                    let callees = traversal.find_callees(node_id, 2).unwrap_or_default();
+
+                    // 3. Test contracts
+                    let tests = traversal.get_related_by_edge(node_id, "test_of", "incoming").unwrap_or_default();
+
+                    // 4. Git archaeology narrative
+                    let arch = GitArchaeologist::new(conn, project.id);
+                    let git_narrative = arch.archaeology_narrative(node_id).ok();
+
+                    // 5. Related memories
+                    let symbol_name = node.name.clone().unwrap_or_default();
+                    let memories = db::queries::search_memory_notes(conn, project.id, &symbol_name, 5)
+                        .unwrap_or_default();
+
+                    // 6. Related ADRs
+                    let adrs = db::queries::list_adrs(conn, project.id).unwrap_or_default();
+                    let related_adrs: Vec<_> = adrs.into_iter().filter(|adr| {
+                        let search = symbol_name.to_lowercase();
+                        adr.title.to_lowercase().contains(&search)
+                            || adr.context.to_lowercase().contains(&search)
+                            || adr.decision.to_lowercase().contains(&search)
+                    }).collect();
+
+                    // 7. PageRank
+                    let pagerank = db::queries::get_node_pagerank(conn, node_id).unwrap_or(0.0);
+
+                    // 8. Impact analysis (shallow)
+                    let impact = ImpactAnalysis::new(conn).analyze(node_id, 2).ok();
+
+                    Ok(json!({
+                        "symbol": {
+                            "id": node.id,
+                            "name": node.name,
+                            "kind": node.kind,
+                            "file": node.file_path,
+                            "lines": format!("{}–{}", node.start_line, node.end_line),
+                            "signature": node.signature,
+                            "doc_comment": node.doc_comment,
+                            "complexity": node.complexity,
+                            "is_exported": node.is_exported
+                        },
+                        "authority": {
+                            "pagerank": pagerank,
+                            "is_hub": pagerank > 0.05,
+                            "callers_count": callers.len(),
+                            "callees_count": callees.len()
+                        },
+                        "graph": {
+                            "callers": callers.iter().take(10).map(|n| json!({
+                                "id": n.id, "name": n.name, "kind": n.kind, "file": n.file_path
+                            })).collect::<Vec<_>>(),
+                            "callees": callees.iter().take(10).map(|n| json!({
+                                "id": n.id, "name": n.name, "kind": n.kind, "file": n.file_path
+                            })).collect::<Vec<_>>()
+                        },
+                        "tests": {
+                            "count": tests.len(),
+                            "has_tests": !tests.is_empty(),
+                            "test_symbols": tests.iter().take(10).map(|t| json!({
+                                "id": t.id, "name": t.name, "file": t.file_path
+                            })).collect::<Vec<_>>()
+                        },
+                        "git_history": git_narrative,
+                        "impact": impact.as_ref().map(|i| json!({
+                            "risk_level": i.risk_level,
+                            "total_files_affected": i.total_files_affected,
+                            "total_symbols_affected": i.total_symbols_affected
+                        })),
+                        "memories": memories,
+                        "related_adrs": related_adrs,
+                        "summary_hint": format!(
+                            "{} `{}` in `{}` — {} callers, {} callees, complexity {}, {}. {}",
+                            node.kind,
+                            symbol_name,
+                            node.file_path,
+                            callers.len(),
+                            callees.len(),
+                            node.complexity.unwrap_or(0),
+                            if tests.is_empty() { "⚠️ no tests".to_string() } else { format!("✅ {} tests", tests.len()) },
+                            if pagerank > 0.05 { "🔴 architectural hub" } else { "" }
+                        )
+                    }))
+                })
+            }),
+        );
+
+        // ─── suggest_tests ───
+        let c_suggest = conn.clone();
+        self.register(
+            "suggest_tests",
+            "Identifies functions and methods that most need test coverage. Ranks candidates by: (1) high cyclomatic complexity, (2) high PageRank authority (many dependents), (3) absence of test_of edges. Returns prioritized list with rationale.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "project": {"type": "string"},
+                    "limit": {"type": "integer", "default": 15}
+                },
+                "required": ["project"]
+            }),
+            Arc::new(move |params| {
+                let pname = params["project"].as_str().unwrap_or("default");
+                let limit = params["limit"].as_i64().unwrap_or(15);
+                Self::conn(&c_suggest, |conn| {
+                    let project = db::queries::get_project(conn, pname)?
+                        .ok_or_else(|| anyhow::anyhow!("Project not found"))?;
+
+                    // Query: functions/methods with complexity, no test_of edges, ordered by score
+                    let mut stmt = conn.prepare(
+                        "SELECT n.id, n.name, n.kind, n.file_path, n.complexity, n.signature,
+                                COALESCE(np.pagerank, 0.0) as pr,
+                                (SELECT COUNT(*) FROM edges e WHERE e.target_node_id = n.id AND e.kind = 'test_of') as test_count,
+                                (SELECT COUNT(*) FROM edges e WHERE e.target_node_id = n.id AND e.kind IN ('called_by', 'referenced_by')) as dependents
+                         FROM nodes n
+                         LEFT JOIN node_pagerank np ON np.node_id = n.id
+                         WHERE n.project_id = ?1
+                           AND n.kind IN ('function', 'method')
+                           AND n.complexity IS NOT NULL
+                           AND n.complexity > 3
+                           AND (SELECT COUNT(*) FROM edges e WHERE e.target_node_id = n.id AND e.kind = 'test_of') = 0
+                         ORDER BY (COALESCE(n.complexity, 1) * (1.0 + COALESCE(np.pagerank, 0.0) * 100.0)) DESC
+                         LIMIT ?2"
+                    )?;
+
+                    let candidates: Vec<serde_json::Value> = stmt.query_map(
+                        rusqlite::params![project.id, limit],
+                        |row| {
+                            let complexity: i64 = row.get(4)?;
+                            let pagerank: f64 = row.get(6)?;
+                            let test_count: i64 = row.get(7)?;
+                            let dependents: i64 = row.get(8)?;
+                            let score = (complexity as f64) * (1.0 + pagerank * 100.0);
+
+                            let mut reasons = Vec::new();
+                            if complexity > 10 { reasons.push(format!("high complexity ({})", complexity)); }
+                            else if complexity > 5 { reasons.push(format!("moderate complexity ({})", complexity)); }
+                            if pagerank > 0.05 { reasons.push(format!("architectural hub (PR: {:.4})", pagerank)); }
+                            if dependents > 5 { reasons.push(format!("{} dependents", dependents)); }
+                            if test_count == 0 { reasons.push("no test coverage".to_string()); }
+
+                            Ok(serde_json::json!({
+                                "node_id": row.get::<_, i64>(0)?,
+                                "name": row.get::<_, Option<String>>(1)?,
+                                "kind": row.get::<_, String>(2)?,
+                                "file": row.get::<_, String>(3)?,
+                                "complexity": complexity,
+                                "signature": row.get::<_, Option<String>>(5)?,
+                                "pagerank": pagerank,
+                                "dependents": dependents,
+                                "priority_score": score,
+                                "reasons": reasons
+                            }))
+                        }
+                    )?.filter_map(|r| r.ok()).collect();
+
+                    Ok(json!({
+                        "project": pname,
+                        "candidates_count": candidates.len(),
+                        "methodology": "Score = complexity × (1 + pagerank × 100). Filtered to functions with complexity > 3 and no test_of edges.",
+                        "candidates": candidates
+                    }))
+                })
+            }),
+        );
+
+        // ─── plan_change ───
+        let c_plan = conn.clone();
+        self.register(
+            "plan_change",
+            "Given a list of files/symbols you plan to modify plus a natural-language description, returns: (1) risk-ordered change sequence, (2) tests that will break, (3) files in blast radius, (4) specific recommendations to reduce risk. Wraps evaluate_plan_risk with a cleaner interface for planning workflows.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "project": {"type": "string"},
+                    "description": {"type": "string", "description": "What are you trying to accomplish?"},
+                    "files": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of file paths you plan to modify"
+                    }
+                },
+                "required": ["project", "description", "files"]
+            }),
+            Arc::new(move |params| {
+                let pname = params["project"].as_str().unwrap_or("default");
+                let description = params["description"].as_str().unwrap_or("");
+                let files: Vec<String> = params["files"].as_array()
+                    .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+
+                Self::conn(&c_plan, |conn| {
+                    let project = db::queries::get_project(conn, pname)?
+                        .ok_or_else(|| anyhow::anyhow!("Project not found"))?;
+
+                    // Build targets for risk evaluator
+                    let targets: Vec<crate::graph::risk::PlanTarget> = files.iter().map(|f| {
+                        crate::graph::risk::PlanTarget {
+                            file_path: f.clone(),
+                            symbol_name: None,
+                        }
+                    }).collect();
+                    let intents: Vec<Option<String>> = files.iter().map(|_| Some(description.to_string())).collect();
+
+                    // Run FMEA risk analysis
+                    let evaluator = crate::graph::risk::RiskEvaluator::new(conn);
+                    let report = evaluator.evaluate_plan_risk_with_intent(project.id, &targets, &intents)?;
+
+                    // Collect all tests that could break
+                    let traversal = GraphTraversal::new(conn);
+                    let mut affected_tests = Vec::new();
+                    for target in &report.targets_analyzed {
+                        if let Some(node_id) = target.resolved_node_id {
+                            let tests = traversal.get_related_by_edge(node_id, "test_of", "incoming").unwrap_or_default();
+                            for test in tests {
+                                affected_tests.push(json!({
+                                    "test_name": test.name,
+                                    "test_file": test.file_path,
+                                    "triggered_by": target.file_path
+                                }));
+                            }
+                        }
+                    }
+
+                    // Deduplicate tests
+                    let mut seen_tests = std::collections::HashSet::new();
+                    affected_tests.retain(|t| {
+                        let key = format!("{}:{}", t["test_file"], t["test_name"]);
+                        seen_tests.insert(key)
+                    });
+
+                    Ok(json!({
+                        "plan_description": description,
+                        "overall_risk": {
+                            "score": report.overall_risk_score,
+                            "level": report.risk_level,
+                            "confidence": report.confidence_score
+                        },
+                        "change_order": report.safe_change_order,
+                        "affected_tests": {
+                            "count": affected_tests.len(),
+                            "tests": affected_tests
+                        },
+                        "boundary_violations": report.boundary_violations,
+                        "recommendations": report.counterfactual_recommendations,
+                        "files_analyzed": report.targets_analyzed.len()
+                    }))
+                })
+            }),
+        );
     }
 
     fn register_memory_tools(&mut self, conn: &SharedConn, session: &Arc<Mutex<SessionMemory>>) {
@@ -1175,6 +1451,9 @@ mod tests {
         assert!(names.contains(&"search_symbol"));
         assert!(names.contains(&"memory_store"));
         assert!(names.contains(&"get_status"));
+        assert!(names.contains(&"explain_code"));
+        assert!(names.contains(&"suggest_tests"));
+        assert!(names.contains(&"plan_change"));
     }
 
     #[test]
