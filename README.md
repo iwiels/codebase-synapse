@@ -1,153 +1,219 @@
-# MCP Registry
+<div align="center">
 
-The MCP registry provides MCP clients with a list of MCP servers, like an app store for MCP servers.
+# 🧠 Codebase Synapse
 
-[**📤 Publish my MCP server**](docs/modelcontextprotocol-io/quickstart.mdx) | [**⚡️ Live API docs**](https://registry.modelcontextprotocol.io/docs) | [**👀 Ecosystem vision**](docs/design/ecosystem-vision.md) | 📖 **[Full documentation](./docs)**
+**Give your AI agent a deep understanding of your entire codebase.**
 
-## Development Status
+An MCP server that indexes your codebase into a local knowledge graph with **52 AI tools** — semantic search, call-graph traversal, git archaeology, blast-radius analysis, and more.
 
-**2025-10-24 update**: The Registry API has entered an **API freeze (v0.1)** 🎉. For the next month or more, the API will remain stable with no breaking changes, allowing integrators to confidently implement support. This freeze applies to v0.1 while development continues on v0. We'll use this period to validate the API in real-world integrations and gather feedback to shape v1 for general availability. Thank you to everyone for your contributions and patience—your involvement has been key to getting us here!
+<br/>
 
-**2025-09-08 update**: The registry has launched in preview 🎉 ([announcement blog post](https://blog.modelcontextprotocol.io/posts/2025-09-08-mcp-registry-preview/)). While the system is now more stable, this is still a preview release and breaking changes or data resets may occur. A general availability (GA) release will follow later. We'd love your feedback in [GitHub discussions](https://github.com/modelcontextprotocol/registry/discussions/new?category=ideas) or in the [#registry-dev Discord](https://discord.com/channels/1358869848138059966/1369487942862504016) ([joining details here](https://modelcontextprotocol.io/community/communication)).
+<img src="docs/assets/hero-banner.png" alt="Codebase Synapse — Knowledge graph visualization" width="700"/>
 
-Registry Working Group:
-- **Tadas Antanavicius** (PulseMCP) [@tadasant](https://github.com/tadasant)
-- **Radoslav (Rado) Dimitrov** (Stacklok) [@rdimitrov](https://github.com/rdimitrov)
-- **Bob Dickinson** (TeamSpark) [@BobDickinson](https://github.com/BobDickinson)
-- **Preeti (Pree) Dewani** (Ravenmail) [@pree-dew](https://github.com/pree-dew)
+<br/>
 
-## Contributing
+Works with **Claude Code** · **Cursor** · **Windsurf** · **Zed** · **Any MCP client**
 
-We use multiple channels for collaboration - see [modelcontextprotocol.io/community/communication](https://modelcontextprotocol.io/community/communication).
+[![CI](https://github.com/iwiels/codebase-synapse/actions/workflows/ci.yml/badge.svg)](https://github.com/iwiels/codebase-synapse/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/codebase-synapse.svg?style=flat-square)](https://www.npmjs.com/package/codebase-synapse)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg?style=flat-square)](LICENSE)
+[![MCP Registry](https://img.shields.io/badge/MCP-Registry-8A2BE2?style=flat-square)](https://registry.modelcontextprotocol.io)
 
-Often (but not always) ideas flow through this pipeline:
+</div>
 
-- **[Discord](https://modelcontextprotocol.io/community/communication)** - Real-time community discussions
-- **[Discussions](https://github.com/modelcontextprotocol/registry/discussions)** - Propose and discuss product/technical requirements
-- **[Issues](https://github.com/modelcontextprotocol/registry/issues)** - Track well-scoped technical work  
-- **[Pull Requests](https://github.com/modelcontextprotocol/registry/pulls)** - Contribute work towards issues
+---
 
-### Quick start:
+## The Problem
 
-#### Pre-requisites
+AI coding agents (Claude, Cursor, etc.) are powerful — but they work with limited context. They can only see the files you open or feed them. Ask about call chains, architectural patterns, or blast-radius impact, and they **guess**.
 
-- **Docker**
-- **Go 1.24.x**
-- **ko** - Container image builder for Go ([installation instructions](https://ko.build/install/))
-- **golangci-lint v2.4.0**
+**Codebase Synapse** fixes this. It indexes your entire repo into a **local knowledge graph** stored in SQLite, giving your AI agent real answers backed by structural analysis — not hallucinations.
 
-#### Running the server
+<div align="center">
+<img src="docs/assets/demo-terminal.png" alt="Codebase Synapse demo — indexing and impact analysis" width="650"/>
+</div>
 
-```bash
-# Start full development environment
-make dev-compose
+### How it works
+
+```mermaid
+graph LR
+    A["📁 Your Codebase"] -->|Tree-sitter| B["🧩 Parser"]
+    B -->|Symbols & Edges| C["🕸️ Knowledge Graph"]
+    C -->|SQLite| D["💾 Local DB"]
+    D -->|52 MCP Tools| E["🤖 AI Agent"]
+    
+    style A fill:#1a1b26,stroke:#7aa2f7,color:#c0caf5
+    style B fill:#1a1b26,stroke:#bb9af7,color:#c0caf5
+    style C fill:#1a1b26,stroke:#9ece6a,color:#c0caf5
+    style D fill:#1a1b26,stroke:#e0af68,color:#c0caf5
+    style E fill:#1a1b26,stroke:#f7768e,color:#c0caf5
 ```
 
-This starts the registry at [`localhost:8080`](http://localhost:8080) with PostgreSQL. The database uses ephemeral storage and is reset each time you restart the containers, ensuring a clean state for development and testing.
+## ⚡ Quick Start
 
-**Note:** The registry uses [ko](https://ko.build) to build container images. The `make dev-compose` command automatically builds the registry image with ko and loads it into your local Docker daemon before starting the services.
+```bash
+npx codebase-synapse
+```
 
-By default, the registry seeds from the production API with a filtered subset of servers (to keep startup fast). This ensures your local environment mirrors production behavior and all seed data passes validation. For offline development you can seed from a file without validation with `MCP_REGISTRY_SEED_FROM=data/seed.json MCP_REGISTRY_ENABLE_REGISTRY_VALIDATION=false make dev-compose`.
+That's it. No Docker. No database setup. No cloud. The server starts via stdio, indexes your project, and your MCP client connects automatically.
 
-The setup can be configured with environment variables in [docker-compose.yml](./docker-compose.yml) - see [.env.example](./.env.example) for a reference.
+### Configure your client
 
 <details>
-<summary>Alternative: Running a pre-built Docker image</summary>
+<summary><b>Claude Code / Claude Desktop</b></summary>
 
-Pre-built Docker images are automatically published to GitHub Container Registry. Note that the image does not bundle PostgreSQL, so you need to run your own and point the registry at it via `MCP_REGISTRY_DATABASE_URL` (see [docker-compose.yml](./docker-compose.yml) for a working example):
+Add to your `claude_desktop_config.json` or `mcp_servers.json`:
 
-```bash
-# Run latest stable release
-docker run -p 8080:8080 ghcr.io/modelcontextprotocol/registry:latest
-
-# Run latest from main branch (continuous deployment)
-docker run -p 8080:8080 ghcr.io/modelcontextprotocol/registry:main
-
-# Run specific release version
-docker run -p 8080:8080 ghcr.io/modelcontextprotocol/registry:v1.0.0
-
-# Run development build from main branch
-docker run -p 8080:8080 ghcr.io/modelcontextprotocol/registry:main-20250906-abc123d
+```json
+{
+  "mcpServers": {
+    "codebase-synapse": {
+      "command": "npx",
+      "args": ["-y", "codebase-synapse"]
+    }
+  }
+}
 ```
-
-**Available tags:** 
-- **Releases**: `latest`, `v1.0.0`, `v1.1.0`, etc.
-- **Continuous**: `main` (latest main branch build)
-- **Development**: `main-<date>-<sha>` (specific commit builds)
 
 </details>
 
-#### Publishing a server
+<details>
+<summary><b>Cursor</b></summary>
 
-To publish a server, we've built a simple CLI. You can use it with:
+Add to your `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "codebase-synapse": {
+      "command": "npx",
+      "args": ["-y", "codebase-synapse"]
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><b>Other MCP clients</b></summary>
+
+Any MCP client that supports **stdio** transport works. Just point it at:
 
 ```bash
-# Build the latest CLI
-make publisher
-
-# Use it!
-./bin/mcp-publisher --help
+npx -y codebase-synapse
 ```
 
-See [the publisher guide](./docs/modelcontextprotocol-io/quickstart.mdx) for more details.
+</details>
 
-#### Other commands
+## ✨ What It Does
+
+### 🔍 Search & Discovery
+| Tool | Description |
+|:-----|:------------|
+| `semantic_search` | Vector similarity search using local embeddings (all-MiniLM-L6-v2) |
+| `search_code` | Full-text search across code (FTS5 + BM25 ranking) |
+| `search_symbol` | Find functions, classes, types by name or pattern |
+| `hybrid_search` | Combined semantic + lexical search with RRF fusion |
+| `find_similar` | Find structurally similar code using MinHash + LSH |
+| `find_symbol_everywhere` | Locate a symbol across all indexed projects |
+
+### 🕸️ Knowledge Graph
+| Tool | Description |
+|:-----|:------------|
+| `get_callers` / `get_callees` | Navigate the call graph in either direction |
+| `get_imports` / `get_dependents` | Trace dependency chains |
+| `impact_analysis` | Compute blast radius before editing a file |
+| `find_path` | Find the shortest connection between two symbols |
+| `find_dead_code` | Detect unreachable functions and unused exports |
+| `get_pagerank` | Identify the most critical nodes in your architecture |
+| `query_graph` | Run Cypher-like queries against the knowledge graph |
+
+### 🏗️ Architecture
+| Tool | Description |
+|:-----|:------------|
+| `get_architecture` | Full project architecture overview (languages, entry points, hotspots) |
+| `get_file_structure` | Directory tree with symbol annotations |
+| `project_overview` | High-level summary with key metrics |
+| `get_route_map` | Extract HTTP routes and their handler mappings |
+| `suggest_boundaries` | Detect module boundaries via Leiden clustering |
+| `check_boundaries` | Validate cross-module dependencies against defined boundaries |
+| `get_clusters` | Community detection across the codebase |
+
+### 🔬 Git Archaeology
+| Tool | Description |
+|:-----|:------------|
+| `git_archaeology` | Deep history analysis of a file (authors, churn, evolution) |
+| `get_hotspots` | Files with highest complexity × change frequency |
+| `detect_change_coupling` | Files that always change together |
+| `get_recent_semantic_changes` | Semantically meaningful recent changes |
+| `index_git_history` | Build temporal analysis from git log |
+
+### 🧠 Memory & Context
+| Tool | Description |
+|:-----|:------------|
+| `memory_store` / `memory_search` / `memory_list` | Persistent notes, facts, and decisions across sessions |
+| `session_remember` / `session_recall` | Short-term memory within a session |
+| `get_context` | Budgeted context preparation for AI agents |
+| `get_edit_context` | Focused context for a specific file edit |
+| `get_working_set` | Recently accessed and modified files |
+| `manage_adr` | Architecture Decision Records management |
+
+### 🛡️ Codebase Guard
+
+Included as a bonus: **`codebase-guard`** is a `PreToolUse` hook for Claude Code that **blocks writes to high-impact files** until the agent runs `impact_analysis` first.
+
+It uses PageRank scores and blast-radius data from the knowledge graph to identify architectural hubs. No more accidental edits to core files.
+
+## 🔧 Technical Details
+
+| | |
+|:--|:--|
+| **Language** | Rust (compiled native binary) |
+| **Transport** | MCP stdio (JSON-RPC) |
+| **Storage** | SQLite (WAL mode, zero config) |
+| **Embeddings** | all-MiniLM-L6-v2 via Candle (offline, local, lazy-loaded) |
+| **Parsing** | Tree-sitter (10 languages) |
+| **Distribution** | npm with prebuilt binaries (Windows, macOS, Linux × x64, arm64) |
+
+### Supported Languages
+
+Rust · Python · TypeScript · JavaScript · Go · Java · C# · PHP · C · C++
+
+### Architecture
+
+```
+src/
+├── parser/       # Tree-sitter parsing & entity extraction
+├── graph/        # Knowledge graph, PageRank, Leiden clustering
+├── indexer/      # Repository indexing pipeline & file watcher
+├── search/       # BM25 full-text + vector cosine + hybrid RRF
+├── embedding/    # Candle-based local embeddings (feature-gated)
+├── memory/       # Persistent & session memory stores
+├── mcp/          # MCP protocol transport + 52 tool handlers
+├── git/          # Git archaeology, intent classification, hotspots
+├── context/      # Budgeted context preparation for AI
+├── cypher/       # Nom-based Cypher parser → SQL CTE planner
+├── similarity/   # MinHash + LSH structural similarity
+├── semantic/     # Multi-signal scoring (tokens, directory, AST)
+└── cli/          # Interactive TUI installer + artifact export/import
+```
+
+## 🤝 Contributing
+
+Contributions are welcome! The project uses standard Rust tooling:
 
 ```bash
-# Run lint, unit tests and integration tests
-make check
+# Run tests
+cargo test
+
+# Lint
+cargo clippy -- -D warnings
+
+# Format
+cargo fmt --all
 ```
 
-There are also a few more helpful commands for development. Run `make help` to learn more, or look in [Makefile](./Makefile).
+## 📄 License
 
-<!--
-For Claude and other AI tools: Always prefer make targets over custom commands where possible.
--->
-
-## Architecture
-
-### Project Structure
-
-```
-├── cmd/                     # Application entry points
-│   └── publisher/           # Server publishing tool
-├── data/                    # Seed data
-├── deploy/                  # Deployment configuration (Pulumi)
-├── docs/                    # Documentation
-├── internal/                # Private application code
-│   ├── api/                 # HTTP handlers and routing
-│   ├── auth/                # Authentication (GitHub OAuth, JWT, namespace blocking)
-│   ├── config/              # Configuration management
-│   ├── database/            # Data persistence (PostgreSQL)
-│   ├── service/             # Business logic
-│   ├── telemetry/           # Metrics and monitoring
-│   └── validators/          # Input validation
-├── pkg/                     # Public packages
-│   ├── api/                 # API types and structures
-│   │   └── v0/              # Version 0 API types
-│   └── model/               # Data models for server.json
-├── scripts/                 # Development and testing scripts
-├── tests/                   # Integration tests
-└── tools/                   # CLI tools and utilities
-    └── validate-*.sh        # Schema validation tools
-```
-
-### Authentication
-
-Publishing supports multiple authentication methods:
-- **GitHub OAuth** - For publishing by logging into GitHub
-- **GitHub OIDC** - For publishing from GitHub Actions
-- **DNS verification** - For proving ownership of a domain and its subdomains
-- **HTTP verification** - For proving ownership of a domain
-
-The registry validates namespace ownership when publishing. E.g. to publish...:
-- `io.github.domdomegg/my-cool-mcp` you must login to GitHub as `domdomegg`, or be in a GitHub Action on domdomegg's repos
-- `me.adamjones/my-cool-mcp` you must prove ownership of `adamjones.me` via DNS or HTTP challenge
-
-## Community Projects
-
-Check out [community projects](docs/community-projects.md) to explore notable registry-related work created by the community.
-
-## More documentation
-
-See the [documentation](./docs) for more details if your question has not been answered here!
+[Apache-2.0](LICENSE)
