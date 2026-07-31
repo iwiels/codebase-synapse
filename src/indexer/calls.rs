@@ -53,6 +53,14 @@ fn get_keywords() -> &'static HashSet<&'static str> {
     })
 }
 
+/// Determine the language of a source file from its extension.
+fn language_of(file_path: &str) -> String {
+    std::path::Path::new(file_path)
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default()
+}
+
 /// A lightweight call graph resolver (Hybrid LSP) that maps raw source function calls to database target nodes.
 pub fn resolve_project_calls(conn: &Connection, project_id: i64) -> Result<()> {
     // 1. Delete all existing 'calls' edges for this project to rebuild the call graph
@@ -96,16 +104,25 @@ pub fn resolve_project_calls(conn: &Connection, project_id: i64) -> Result<()> {
     }
 
     // Index functions/methods for fast lookup by name and path
-    // Map: name -> Vec<Node>
+    // Map: name -> Vec<Node> (global, used for uniqueness checks)
     let mut func_by_name: HashMap<String, Vec<&Node>> = HashMap::new();
-    // Map: (file_path, name) -> Node
-    let mut func_by_file_name: HashMap<(String, String), &Node> = HashMap::new();
+    // Map: (file_path, name) -> Vec<Node> (same-file resolution)
+    let mut func_by_file_name: HashMap<(String, String), Vec<&Node>> = HashMap::new();
+    // Map: (language, name) -> Vec<Node> (cross-file resolution, language-aware)
+    let mut func_by_lang_name: HashMap<(String, String), Vec<&Node>> = HashMap::new();
 
     for node in &nodes {
         if node.kind == "function" || node.kind == "method" {
             if let Some(ref name) = node.name {
                 func_by_name.entry(name.clone()).or_default().push(node);
-                func_by_file_name.insert((node.file_path.clone(), name.clone()), node);
+                func_by_file_name
+                    .entry((node.file_path.clone(), name.clone()))
+                    .or_default()
+                    .push(node);
+                func_by_lang_name
+                    .entry((language_of(&node.file_path), name.clone()))
+                    .or_default()
+                    .push(node);
             }
         }
     }
@@ -121,54 +138,82 @@ pub fn resolve_project_calls(conn: &Connection, project_id: i64) -> Result<()> {
             None => continue,
         };
 
-        // Extract call names
-        let mut call_targets = HashSet::new();
+        // Extract call names, tracking whether each is a method call
+        // (`obj.method(...)`) vs a free function call (`name(...)`)
+        let mut call_targets: HashSet<(String, bool)> = HashSet::new();
         for cap in get_call_re().captures_iter(source_code) {
             let name = cap.get(1).unwrap().as_str();
             if !get_keywords().contains(name) {
-                call_targets.insert(name.to_string());
+                let is_method = cap
+                    .get(0)
+                    .map(|m| m.start() > 0 && source_code[..m.start()].ends_with('.'))
+                    .unwrap_or(false);
+                call_targets.insert((name.to_string(), is_method));
             }
         }
 
         // For each call name, resolve the target node ID
-        for target_name in call_targets {
+        for (target_name, is_method) in call_targets {
             let mut resolved_id = None;
 
-            // Signal 1: Local file match (High priority)
-            if let Some(local_node) =
-                func_by_file_name.get(&(source_node.file_path.clone(), target_name.clone()))
-            {
-                resolved_id = Some(local_node.id);
-            }
+            if is_method {
+                // Method calls resolve only within the same file to avoid
+                // false positives like `.map()` on arrays or `.filter()` on
+                // iterables.
+                if let Some(nodes) = func_by_file_name
+                    .get(&(source_node.file_path.clone(), target_name.clone()))
+                {
+                    if let Some(method) = nodes.iter().find(|n| n.kind == "method") {
+                        resolved_id = Some(method.id);
+                    }
+                }
+            } else {
+                // Signal 1: Local file match (High priority)
+                if let Some(nodes) = func_by_file_name
+                    .get(&(source_node.file_path.clone(), target_name.clone()))
+                {
+                    let local_node = nodes
+                        .iter()
+                        .find(|n| n.kind == "function")
+                        .or_else(|| nodes.first());
+                    if let Some(local_node) = local_node {
+                        resolved_id = Some(local_node.id);
+                    }
+                }
 
-            // Signal 2: Directory proximity match
-            if resolved_id.is_none() {
-                if let Some(candidates) = func_by_name.get(&target_name) {
-                    let source_dir = std::path::Path::new(&source_node.file_path)
-                        .parent()
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_default();
-
-                    for cand in candidates {
-                        let cand_dir = std::path::Path::new(&cand.file_path)
+                // Signal 2: Directory proximity match (same language only)
+                if resolved_id.is_none() {
+                    let source_lang = language_of(&source_node.file_path);
+                    if let Some(candidates) =
+                        func_by_lang_name.get(&(source_lang, target_name.clone()))
+                    {
+                        let source_dir = std::path::Path::new(&source_node.file_path)
                             .parent()
                             .map(|p| p.to_string_lossy().to_string())
                             .unwrap_or_default();
 
-                        if cand_dir == source_dir {
-                            resolved_id = Some(cand.id);
-                            break;
+                        for cand in candidates {
+                            let cand_dir = std::path::Path::new(&cand.file_path)
+                                .parent()
+                                .map(|p| p.to_string_lossy().to_string())
+                                .unwrap_or_default();
+
+                            if cand_dir == source_dir {
+                                resolved_id = Some(cand.id);
+                                break;
+                            }
                         }
                     }
                 }
-            }
 
-            // Signal 3: Global match (Fallback)
-            if resolved_id.is_none() {
-                if let Some(candidates) = func_by_name.get(&target_name) {
-                    // Just take the first candidate
-                    if !candidates.is_empty() {
-                        resolved_id = Some(candidates[0].id);
+                // Signal 3: Global match (Fallback) — only when the name is
+                // unique across the whole project and the symbol is exported,
+                // to avoid resolving common names to unrelated symbols.
+                if resolved_id.is_none() {
+                    if let Some(candidates) = func_by_name.get(&target_name) {
+                        if candidates.len() == 1 && candidates[0].is_exported {
+                            resolved_id = Some(candidates[0].id);
+                        }
                     }
                 }
             }
