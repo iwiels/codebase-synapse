@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use rusqlite::Connection;
 use serde_json::{json, Value};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::config::Config;
 use crate::context::ContextBudget;
@@ -95,15 +95,28 @@ impl ToolRegistry {
         let _c = conn.clone();
         let idx = indexer.clone();
         let emb = embedder.clone();
+        let indexing_busy = Arc::new(std::sync::atomic::AtomicBool::new(false));
         self.register(
             "index_repository",
-            "Index a repository into the knowledge graph",
+            "Index a repository into the knowledge graph. Runs in the background; poll get_status to monitor embedding progress.",
             json!({"type":"object","properties":{"repo_path":{"type":"string"}},"required":["repo_path"]}),
             Arc::new(move |params| {
-                let repo_path = params["repo_path"].as_str().ok_or_else(|| anyhow::anyhow!("Missing repo_path"))?;
-                info!("Indexing repository: {}", repo_path);
-                idx.index_repository_with_embedder(repo_path, &emb)?;
-                Ok(json!({"status":"indexed","repo_path":repo_path}))
+                let repo_path = params["repo_path"].as_str().ok_or_else(|| anyhow::anyhow!("Missing repo_path"))?.to_string();
+                if indexing_busy.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                    return Ok(json!({"status":"busy","message":"An index is already running; poll get_status."}));
+                }
+                let idx = idx.clone();
+                let emb = emb.clone();
+                let busy = indexing_busy.clone();
+                std::thread::spawn(move || {
+                    let result = idx.index_repository_with_embedder(&repo_path, &emb);
+                    busy.store(false, std::sync::atomic::Ordering::SeqCst);
+                    match result {
+                        Ok(_) => info!("Background index of {} finished", repo_path),
+                        Err(e) => warn!("Background index of {} failed: {}", repo_path, e),
+                    }
+                });
+                Ok(json!({"status":"started","message":"Indexing started in background; poll get_status for progress."}))
             }),
         );
 
@@ -142,15 +155,31 @@ impl ToolRegistry {
         let _c4 = conn.clone();
         let idx2 = indexer.clone();
         let emb2 = embedder.clone();
+        let reindex_busy = Arc::new(std::sync::atomic::AtomicBool::new(false));
         self.register(
             "reindex_changed",
-            "Incremental reindex of changed files",
+            "Incremental reindex of changed files. Runs in the background; poll get_status to monitor embedding progress.",
             json!({"type":"object","properties":{"repo_path":{"type":"string"},"files":{"type":"array","items":{"type":"string"}}},"required":["repo_path"]}),
             Arc::new(move |params| {
-                let repo_path = params["repo_path"].as_str().ok_or_else(|| anyhow::anyhow!("Missing repo_path"))?;
+                let repo_path = params["repo_path"].as_str().ok_or_else(|| anyhow::anyhow!("Missing repo_path"))?.to_string();
                 let files: Vec<String> = params["files"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
-                idx2.incremental_update_with_embedder(repo_path, &files, &emb2)?;
-                Ok(json!({"status":"updated","files":files.len()}))
+                let file_count = files.len();
+                if reindex_busy.swap(true, std::sync::atomic::Ordering::SeqCst) {
+                    return Ok(json!({"status":"busy","message":"An incremental reindex is already running; poll get_status."}));
+                }
+                let idx2 = idx2.clone();
+                let emb2 = emb2.clone();
+                let busy = reindex_busy.clone();
+                let repo_path2 = repo_path.clone();
+                std::thread::spawn(move || {
+                    let result = idx2.incremental_update_with_embedder(&repo_path2, &files, &emb2);
+                    busy.store(false, std::sync::atomic::Ordering::SeqCst);
+                    match result {
+                        Ok(_) => info!("Background incremental reindex of {} finished ({} files)", repo_path2, file_count),
+                        Err(e) => warn!("Background incremental reindex of {} failed: {}", repo_path2, e),
+                    }
+                });
+                Ok(json!({"status":"started","files":file_count,"message":"Incremental reindex started in background; poll get_status for progress."}))
             }),
         );
     }
@@ -1195,6 +1224,14 @@ impl ToolRegistry {
                     let embedding_count: i64 = conn
                         .query_row("SELECT COUNT(*) FROM embeddings", [], |r| r.get(0))
                         .unwrap_or(0);
+                    let embeddings_pending: i64 = conn
+                        .query_row(
+                            "SELECT COUNT(*) FROM nodes n LEFT JOIN embeddings e ON e.node_id = n.id \
+                             WHERE e.node_id IS NULL AND n.source IS NOT NULL",
+                            [],
+                            |r| r.get(0),
+                        )
+                        .unwrap_or(0);
                     let node_count: i64 = conn
                         .query_row("SELECT COUNT(*) FROM nodes", [], |r| r.get(0))
                         .unwrap_or(0);
@@ -1207,6 +1244,7 @@ impl ToolRegistry {
                         "git_commit_count": git_commit_count,
                         "embeddings_available": embedding_count > 0,
                         "embedding_count": embedding_count,
+                        "embeddings_pending": embeddings_pending,
                         "node_count": node_count
                     }))
                 })

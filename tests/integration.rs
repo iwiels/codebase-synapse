@@ -39,23 +39,32 @@ export function handleRequest() {
     )
     .unwrap();
 
-    // 1. Index Repository
+    // 1. Index Repository (runs in the background)
     let index_req = tool_call_json(
         "index_repository",
         json!({ "repo_path": root.to_str().unwrap() }),
     );
     let index_res_str = server.transport.handle_message(&index_req).unwrap();
     let index_res = parse_tool_result(&index_res_str);
-    assert_eq!(index_res["status"], "indexed");
+    assert_eq!(index_res["status"], "started");
 
-    // 2. List Projects
-    let list_req = tool_call_json("list_projects", json!({}));
-    let list_res_str = server.transport.handle_message(&list_req).unwrap();
-    let list_res = parse_tool_result(&list_res_str);
-    let projects = list_res["projects"].as_array().unwrap();
-    assert!(!projects.is_empty(), "projects should not be empty");
-
-    let proj_name = projects[0]["name"].as_str().unwrap();
+    // 2. List Projects (poll until the background index lands the project)
+    let mut proj_name = String::new();
+    for _ in 0..200 {
+        let list_req = tool_call_json("list_projects", json!({}));
+        let list_res_str = server.transport.handle_message(&list_req).unwrap();
+        let list_res = parse_tool_result(&list_res_str);
+        let projects = list_res["projects"].as_array().unwrap();
+        if let Some(p) = projects.first() {
+            proj_name = p["name"].as_str().unwrap().to_string();
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    assert!(
+        !proj_name.is_empty(),
+        "project should appear after background index"
+    );
 
     // 3. Search Symbol
     let search_sym_req = tool_call_json(
