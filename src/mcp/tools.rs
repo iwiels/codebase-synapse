@@ -1140,37 +1140,40 @@ impl ToolRegistry {
     }
 
     fn register_utility_tools(&mut self, conn: &SharedConn, config: &Arc<Config>) {
-        let _c = conn.clone();
+        let c2 = conn.clone();
         let cfg = config.clone();
         self.register(
             "get_status",
             "Get server health and index status",
             json!({"type":"object","properties":{}}),
             Arc::new(move |_| {
-                let db_size = std::fs::metadata(cfg.db_path())
-                    .map(|m| m.len())
-                    .unwrap_or(0);
-                let data_dir = &cfg.data_dir;
-                // Check if git history is indexed
-                let git_indexed = data_dir.join("git_history.db").exists()
-                    || std::fs::read_dir(data_dir)
-                        .map(|entries| {
-                            entries
-                                .filter_map(|e| e.ok())
-                                .any(|e| e.file_name().to_string_lossy().contains("git"))
-                        })
-                        .unwrap_or(false);
-                // Check if embeddings are available
-                let embeddings_file = data_dir.join("embeddings.db");
-                let embeddings_available = embeddings_file.exists();
-                Ok(json!({
-                    "status": "ok",
-                    "version": env!("CARGO_PKG_VERSION"),
-                    "db_size_bytes": db_size,
-                    "data_dir": cfg.data_dir,
-                    "git_history_indexed": git_indexed,
-                    "embeddings_available": embeddings_available
-                }))
+                Self::conn(&c2, |conn| {
+                    let db_size = std::fs::metadata(cfg.db_path())
+                        .map(|m| m.len())
+                        .unwrap_or(0);
+                    // Query the real tables in codebase.db instead of
+                    // checking for files that never exist.
+                    let git_commit_count: i64 = conn
+                        .query_row("SELECT COUNT(*) FROM git_commits", [], |r| r.get(0))
+                        .unwrap_or(0);
+                    let embedding_count: i64 = conn
+                        .query_row("SELECT COUNT(*) FROM embeddings", [], |r| r.get(0))
+                        .unwrap_or(0);
+                    let node_count: i64 = conn
+                        .query_row("SELECT COUNT(*) FROM nodes", [], |r| r.get(0))
+                        .unwrap_or(0);
+                    Ok(json!({
+                        "status": "ok",
+                        "version": env!("CARGO_PKG_VERSION"),
+                        "db_size_bytes": db_size,
+                        "data_dir": cfg.data_dir,
+                        "git_history_indexed": git_commit_count > 0,
+                        "git_commit_count": git_commit_count,
+                        "embeddings_available": embedding_count > 0,
+                        "embedding_count": embedding_count,
+                        "node_count": node_count
+                    }))
+                })
             }),
         );
         let c2 = conn.clone();
