@@ -62,7 +62,9 @@ thiserror = "1"
 candle-core = { version = "0.11", optional = true }
 candle-nn = { version = "0.11", optional = true }
 candle-transformers = { version = "0.11", optional = true }
-hf-hub = { version = "0.4", optional = true }
+# ureq pulls rustls (not native-tls/openssl) so cross-compiled release
+# binaries (e.g. aarch64-linux) do not need OpenSSL development libraries.
+hf-hub = { version = "0.4", optional = true, default-features = false, features = ["ureq"] }
 tokenizers = { version = "0.21", optional = true }
 
 # Utilities
