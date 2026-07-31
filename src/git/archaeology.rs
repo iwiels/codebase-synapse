@@ -76,12 +76,20 @@ impl<'a> GitArchaeologist<'a> {
             )?;
 
             for file_path in &changed_files {
+                // Git reports paths with forward slashes, but indexed node
+                // paths may use the platform separator (backslashes on
+                // Windows). Match both so commit links are actually created.
+                let unix = format!("%{}", file_path.replace('\\', "/"));
+                let windows = format!("%{}", file_path.replace('/', "\\"));
                 let node_ids: Vec<i64> = self
                     .conn
-                    .prepare("SELECT id FROM nodes WHERE project_id = ?1 AND file_path LIKE ?2")?
-                    .query_map(params![self.project_id, format!("%{}", file_path)], |row| {
-                        row.get(0)
-                    })?
+                    .prepare(
+                        "SELECT id FROM nodes WHERE project_id = ?1 AND (file_path LIKE ?2 OR file_path LIKE ?3)",
+                    )?
+                    .query_map(
+                        params![self.project_id, unix, windows],
+                        |row| row.get(0),
+                    )?
                     .filter_map(|r| r.ok())
                     .collect();
 
