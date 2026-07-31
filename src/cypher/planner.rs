@@ -179,6 +179,12 @@ impl<'a> CypherPlanner<'a> {
 
         // Build SELECT list based on RETURN clause
         for ret in &query.r#return {
+            if ret.contains('(') {
+                return Err(format!(
+                    "Aggregate expressions are not supported in RETURN (got '{}'). Use plain variables like `n` or `n.property`.",
+                    ret
+                ));
+            }
             if ret.contains('.') {
                 let parts: Vec<&str> = ret.split('.').collect();
                 if parts.len() == 2 {
