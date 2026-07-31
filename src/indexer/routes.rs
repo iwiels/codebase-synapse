@@ -3,6 +3,7 @@ use anyhow::Result;
 use regex::Regex;
 use rusqlite::Connection;
 use serde_json::json;
+use std::collections::HashSet;
 use std::sync::LazyLock;
 
 static MULTI_SLASH_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"/{2,}").unwrap());
@@ -89,9 +90,17 @@ pub fn extract_and_insert_routes(
         }
     }
 
-    routes.dedup();
+    // Deduplicate: patterns can match the same route non-consecutively,
+    // so Vec::dedup() (consecutive only) is not enough.
+    let mut seen = HashSet::new();
+    let mut unique_routes = Vec::new();
+    for route in routes {
+        if seen.insert(route.clone()) {
+            unique_routes.push(route);
+        }
+    }
 
-    for (method, path) in routes {
+    for (method, path) in unique_routes {
         let qn = format!("__route__{}__{}", method, path);
         let name = format!("{} {}", method, path);
 
