@@ -1,4 +1,4 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, LazyLock, OnceLock};
 
 use anyhow::Result;
 
@@ -41,7 +41,16 @@ impl LazyEmbedder {
     }
 
     fn get(&self) -> &Arc<dyn Embedder> {
-        self.inner.get_or_init(|| create_real_embedder())
+        if let Some(emb) = self.inner.get() {
+            return emb;
+        }
+        // Only real embedders are cached. A failed init (e.g. interrupted
+        // model download) returns None, so the next call retries instead of
+        // permanently degrading to a noop until a server restart.
+        if let Some(emb) = create_real_embedder() {
+            let _ = self.inner.set(emb);
+        }
+        self.inner.get().unwrap_or(&NOOP_FALLBACK)
     }
 }
 
@@ -54,25 +63,29 @@ impl Embedder for LazyEmbedder {
     }
 }
 
-/// Build the real embedder (Candle BERT, or Noop fallback).
+/// Shared noop used when a real embedder is unavailable (feature disabled
+/// or a transient init failure). Never cached by `LazyEmbedder`.
+static NOOP_FALLBACK: LazyLock<Arc<dyn Embedder>> =
+    LazyLock::new(|| Arc::new(NoopEmbedder));
+
+/// Build the real embedder (Candle BERT).
 /// Expensive: downloads the model on first run and builds the graph.
+/// `None` means "not available right now" (feature disabled or failed
+/// init) and is retried on the next call.
 #[cfg(feature = "embedding")]
-fn create_real_embedder() -> Arc<dyn Embedder> {
+fn create_real_embedder() -> Option<Arc<dyn Embedder>> {
     match CandleEmbedder::new() {
-        Ok(emb) => Arc::new(emb),
+        Ok(emb) => Some(Arc::new(emb)),
         Err(e) => {
-            tracing::warn!(
-                "Failed to initialize Candle embedder ({}), falling back to noop",
-                e
-            );
-            Arc::new(NoopEmbedder)
+            tracing::warn!("Failed to initialize Candle embedder ({}), retrying on next use", e);
+            None
         }
     }
 }
 
 #[cfg(not(feature = "embedding"))]
-fn create_real_embedder() -> Arc<dyn Embedder> {
-    Arc::new(NoopEmbedder)
+fn create_real_embedder() -> Option<Arc<dyn Embedder>> {
+    None
 }
 
 pub fn create_embedder() -> Arc<dyn Embedder> {

@@ -49,7 +49,7 @@ impl ToolRegistry {
 
         let session = Arc::new(Mutex::new(SessionMemory::new(100)));
 
-        registry.register_index_tools(&conn, &config, &indexer);
+        registry.register_index_tools(&conn, &config, &indexer, &embedder);
         registry.register_search_tools(&conn, &embedder);
         registry.register_graph_tools(&conn);
         registry.register_memory_tools(&conn, &session);
@@ -90,9 +90,11 @@ impl ToolRegistry {
         conn: &SharedConn,
         _config: &Arc<Config>,
         indexer: &Arc<Indexer>,
+        embedder: &Arc<dyn Embedder>,
     ) {
         let _c = conn.clone();
         let idx = indexer.clone();
+        let emb = embedder.clone();
         self.register(
             "index_repository",
             "Index a repository into the knowledge graph",
@@ -100,7 +102,7 @@ impl ToolRegistry {
             Arc::new(move |params| {
                 let repo_path = params["repo_path"].as_str().ok_or_else(|| anyhow::anyhow!("Missing repo_path"))?;
                 info!("Indexing repository: {}", repo_path);
-                idx.index_repository(repo_path)?;
+                idx.index_repository_with_embedder(repo_path, &emb)?;
                 Ok(json!({"status":"indexed","repo_path":repo_path}))
             }),
         );
@@ -139,6 +141,7 @@ impl ToolRegistry {
 
         let _c4 = conn.clone();
         let idx2 = indexer.clone();
+        let emb2 = embedder.clone();
         self.register(
             "reindex_changed",
             "Incremental reindex of changed files",
@@ -146,7 +149,7 @@ impl ToolRegistry {
             Arc::new(move |params| {
                 let repo_path = params["repo_path"].as_str().ok_or_else(|| anyhow::anyhow!("Missing repo_path"))?;
                 let files: Vec<String> = params["files"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
-                idx2.incremental_update(repo_path, &files)?;
+                idx2.incremental_update_with_embedder(repo_path, &files, &emb2)?;
                 Ok(json!({"status":"updated","files":files.len()}))
             }),
         );
@@ -240,6 +243,7 @@ impl ToolRegistry {
                 let id = params["node_id"].as_i64().ok_or_else(|| anyhow::anyhow!("Missing node_id"))?;
                 let depth = params["max_depth"].as_i64().unwrap_or(3);
                 Self::conn(&c, |conn| {
+                    let _ = db::queries::record_node_access_by_id(conn, id);
                     let t = GraphTraversal::new(conn);
                     Ok(json!(t.find_callers(id, depth)?))
                 })
@@ -252,6 +256,7 @@ impl ToolRegistry {
                 let id = params["node_id"].as_i64().ok_or_else(|| anyhow::anyhow!("Missing node_id"))?;
                 let depth = params["max_depth"].as_i64().unwrap_or(3);
                 Self::conn(&c2, |conn| {
+                    let _ = db::queries::record_node_access_by_id(conn, id);
                     let t = GraphTraversal::new(conn);
                     Ok(json!(t.find_callees(id, depth)?))
                 })
@@ -263,6 +268,7 @@ impl ToolRegistry {
             Arc::new(move |params| {
                 let id = params["node_id"].as_i64().ok_or_else(|| anyhow::anyhow!("Missing node_id"))?;
                 Self::conn(&c3, |conn| {
+                    let _ = db::queries::record_node_access_by_id(conn, id);
                     let t = GraphTraversal::new(conn);
                     Ok(json!(t.get_related_by_edge(id, "imports", "outgoing")?))
                 })
@@ -274,6 +280,7 @@ impl ToolRegistry {
             Arc::new(move |params| {
                 let id = params["node_id"].as_i64().ok_or_else(|| anyhow::anyhow!("Missing node_id"))?;
                 Self::conn(&c4, |conn| {
+                    let _ = db::queries::record_node_access_by_id(conn, id);
                     let t = GraphTraversal::new(conn);
                     let deps = t.get_dependents(id)?;
                     Ok(json!(deps.into_iter().map(|(_, n)| n).collect::<Vec<_>>()))
@@ -287,6 +294,7 @@ impl ToolRegistry {
                 let id = params["node_id"].as_i64().ok_or_else(|| anyhow::anyhow!("Missing node_id"))?;
                 let depth = params["max_depth"].as_i64().unwrap_or(5);
                 Self::conn(&c5, |conn| {
+                    let _ = db::queries::record_node_access_by_id(conn, id);
                     let impact = ImpactAnalysis::new(conn);
                     let result = impact.analyze(id, depth)?;
 
@@ -402,6 +410,7 @@ impl ToolRegistry {
                 let id = params["node_id"].as_i64().ok_or_else(|| anyhow::anyhow!("Missing node_id"))?;
                 let thresh = params["threshold"].as_f64().unwrap_or(0.70);
                 Self::conn(&c12, |conn| {
+                    let _ = db::queries::record_node_access_by_id(conn, id);
                     use crate::db::schema::Node;
                     let mut stmt = conn.prepare(
                         "SELECT e.id, e.project_id, e.source_node_id, e.target_node_id, e.kind, e.metadata,
@@ -516,12 +525,32 @@ impl ToolRegistry {
                         }
                         "update" => {
                             let adr_id = params["adr_id"].as_i64().ok_or_else(|| anyhow::anyhow!("Missing adr_id"))?;
-                            let title = params["title"].as_str().ok_or_else(|| anyhow::anyhow!("Missing title"))?;
-                            let status = params["status"].as_str().ok_or_else(|| anyhow::anyhow!("Missing status"))?;
-                            let context = params["context"].as_str().unwrap_or("");
-                            let decision = params["decision"].as_str().unwrap_or("");
-                            let consequences = params["consequences"].as_str().unwrap_or("");
-                            db::queries::update_adr(conn, adr_id, title, status, context, decision, consequences)?;
+                            // Partial update: merge provided fields over the
+                            // existing ADR so a single-field update does not
+                            // erase the rest of the record.
+                            let existing = db::queries::get_adr(conn, adr_id)?
+                                .ok_or_else(|| anyhow::anyhow!("ADR not found"))?;
+                            let title = params["title"]
+                                .as_str()
+                                .map(str::to_string)
+                                .unwrap_or(existing.title);
+                            let status = params["status"]
+                                .as_str()
+                                .map(str::to_string)
+                                .unwrap_or(existing.status);
+                            let context = params["context"]
+                                .as_str()
+                                .map(str::to_string)
+                                .unwrap_or(existing.context);
+                            let decision = params["decision"]
+                                .as_str()
+                                .map(str::to_string)
+                                .unwrap_or(existing.decision);
+                            let consequences = params["consequences"]
+                                .as_str()
+                                .map(str::to_string)
+                                .unwrap_or(existing.consequences);
+                            db::queries::update_adr(conn, adr_id, &title, &status, &context, &decision, &consequences)?;
                             Ok(json!({ "status": "updated" }))
                         }
                         "delete" => {
@@ -1201,6 +1230,7 @@ impl ToolRegistry {
                 let pname = params["project"].as_str().unwrap_or("default");
                 Self::conn(&c1, |conn| {
                     let project = db::queries::get_project(conn, pname)?.ok_or_else(|| anyhow::anyhow!("Project not found"))?;
+                    let _ = db::queries::record_node_access_by_id(conn, node_id);
                     let arch = GitArchaeologist::new(conn, project.id);
                     arch.archaeology_narrative(node_id)
                 })
@@ -1269,6 +1299,7 @@ impl ToolRegistry {
                 let node_id = params["node_id"].as_i64().ok_or_else(|| anyhow::anyhow!("Missing node_id"))?;
                 let _pname = params["project"].as_str().unwrap_or("default");
                 Self::conn(&c5, |conn| {
+                    let _ = db::queries::record_node_access_by_id(conn, node_id);
                     let t = crate::graph::GraphTraversal::new(conn);
                     let tests = t.get_related_by_edge(node_id, "test_of", "incoming")?;
                     Ok(json!({

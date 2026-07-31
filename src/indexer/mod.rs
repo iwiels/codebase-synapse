@@ -9,6 +9,7 @@ use tracing::{info, warn};
 
 use crate::config::Config;
 use crate::db;
+use crate::embedding::{Embedder, NoopEmbedder};
 use crate::graph::GraphBuilder;
 use crate::parser;
 use crate::parser::extractors;
@@ -52,6 +53,18 @@ impl Indexer {
     }
 
     pub fn index_repository(&self, repo_path: &str) -> Result<()> {
+        let noop: Arc<dyn Embedder> = Arc::new(NoopEmbedder);
+        self.index_repository_with_embedder(repo_path, &noop)
+    }
+
+    /// `index_repository` plus storage of vector embeddings for every node
+    /// that lacks one. The noop embedder (feature disabled or failed init)
+    /// makes this a no-op so callers without an embedder pay nothing.
+    pub fn index_repository_with_embedder(
+        &self,
+        repo_path: &str,
+        embedder: &Arc<dyn Embedder>,
+    ) -> Result<()> {
         use rayon::prelude::*;
 
         let path = Path::new(repo_path);
@@ -308,12 +321,26 @@ impl Indexer {
                 Err(e) => warn!("Leiden clustering failed (non-fatal): {}", e),
             }
         }
+        self.embed_pending(project_id, embedder);
         self.emit_progress(7, 7, "Indexing complete!");
 
         Ok(())
     }
 
     pub fn incremental_update(&self, repo_path: &str, changed_files: &[String]) -> Result<()> {
+        let noop: Arc<dyn Embedder> = Arc::new(NoopEmbedder);
+        self.incremental_update_with_embedder(repo_path, changed_files, &noop)
+    }
+
+    /// `incremental_update` plus backfill of embeddings for any node that
+    /// still lacks one (covers both newly inserted nodes and projects that
+    /// were indexed before embeddings were stored).
+    pub fn incremental_update_with_embedder(
+        &self,
+        repo_path: &str,
+        changed_files: &[String],
+        embedder: &Arc<dyn Embedder>,
+    ) -> Result<()> {
         let path = Path::new(repo_path);
         let repo_name = path
             .file_name()
@@ -559,8 +586,79 @@ impl Indexer {
             }
         }
 
+        self.embed_pending(project_id, embedder);
         info!("Incremental update: {} files updated", changed_count);
         Ok(())
+    }
+
+    /// Store embeddings for every node of the project that has source text
+    /// and no stored embedding. Runs as a single backfill so it is safe on
+    /// both fresh and previously-indexed databases. Long sources are
+    /// truncated so token counts stay within the model's context window.
+    fn embed_pending(&self, project_id: i64, embedder: &Arc<dyn Embedder>) {
+        if embedder.dimensions() == 0 {
+            return;
+        }
+        let conn = match self.conn.lock() {
+            Ok(c) => c,
+            Err(e) => {
+                warn!("Embedding backfill skipped (DB lock poisoned): {}", e);
+                return;
+            }
+        };
+        let mut stmt = match conn.prepare(
+            "SELECT n.id, n.source FROM nodes n
+             LEFT JOIN embeddings e ON e.node_id = n.id
+             WHERE n.project_id = ?1 AND e.node_id IS NULL AND n.source IS NOT NULL",
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                warn!("Embedding backfill failed to prepare query: {}", e);
+                return;
+            }
+        };
+        let rows: Vec<(i64, String)> = match stmt
+            .query_map(params![project_id], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            }) {
+            Ok(iter) => iter.filter_map(|r| r.ok()).collect(),
+            Err(e) => {
+                warn!("Embedding backfill query failed: {}", e);
+                return;
+            }
+        };
+        if rows.is_empty() {
+            return;
+        }
+        info!("Storing embeddings for {} nodes (project_id={})", rows.len(), project_id);
+        for chunk in rows.chunks(64) {
+            let texts: Vec<String> = chunk
+                .iter()
+                .map(|(_, s)| s.chars().take(2000).collect())
+                .collect();
+            let refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+            match embedder.embed(&refs) {
+                Ok(vectors) => {
+                    if vectors.is_empty() {
+                        return;
+                    }
+                    for ((node_id, _), vec) in chunk.iter().zip(vectors) {
+                        if let Err(e) = db::queries::upsert_embedding(
+                            &conn,
+                            *node_id,
+                            &vec,
+                            "all-MiniLM-L6-v2",
+                        ) {
+                            warn!("Failed to store embedding for node {}: {}", node_id, e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Embedding failed (backfill aborted): {}", e);
+                    return;
+                }
+            }
+        }
     }
 
     fn resolve_test_contracts(

@@ -855,6 +855,20 @@ pub fn record_node_access(conn: &Connection, node_id: i64, project_id: i64) -> R
     Ok(())
 }
 
+/// Record access for a node, resolving its project_id from the node itself.
+/// No-op when the node does not exist.
+pub fn record_node_access_by_id(conn: &Connection, node_id: i64) -> Result<()> {
+    let project_id: i64 = match conn.query_row(
+        "SELECT project_id FROM nodes WHERE id = ?1",
+        params![node_id],
+        |row| row.get(0),
+    ) {
+        Ok(pid) => pid,
+        Err(_) => return Ok(()),
+    };
+    record_node_access(conn, node_id, project_id)
+}
+
 pub fn get_working_set(conn: &Connection, project_id: i64, limit: i64) -> Result<Vec<(Node, i64)>> {
     let mut stmt = conn.prepare(
         "SELECT n.id, n.project_id, n.file_path, n.kind, n.name, n.qualified_name, n.signature,
