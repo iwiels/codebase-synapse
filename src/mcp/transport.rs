@@ -103,7 +103,7 @@ impl McpTransport {
                     e,
                     &line[..line.len().min(200)]
                 );
-                let err_msg = McpMessage::error(0, McpError::parse_error());
+                let err_msg = McpMessage::error(None, McpError::parse_error());
                 return Ok(Some(serde_json::to_string(&err_msg)?));
             }
         };
@@ -164,7 +164,7 @@ impl McpTransport {
                 let tool_params = params.get("arguments").cloned().unwrap_or(json!({}));
 
                 if !self.registry.has_tool(tool_name) {
-                    return McpMessage::error(id, McpError::method_not_found());
+                    return McpMessage::error(Some(id), McpError::method_not_found());
                 }
 
                 match self.registry.handle(tool_name, tool_params) {
@@ -188,7 +188,7 @@ impl McpTransport {
                 }
             }
 
-            _ => McpMessage::success(id, json!({})),
+            _ => McpMessage::error(Some(id), McpError::method_not_found()),
         }
     }
 

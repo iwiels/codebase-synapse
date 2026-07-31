@@ -270,7 +270,14 @@ impl ToolRegistry {
                 Self::conn(&c3, |conn| {
                     let _ = db::queries::record_node_access_by_id(conn, id);
                     let t = GraphTraversal::new(conn);
-                    Ok(json!(t.get_related_by_edge(id, "imports", "outgoing")?))
+                    let imports = t.get_related_by_edge(id, "imports", "outgoing")?;
+                    if imports.is_empty() {
+                        return Ok(json!({
+                            "imports": [],
+                            "note": "No import edges are stored: import relations are not extracted yet, so this tool cannot report imports."
+                        }));
+                    }
+                    Ok(json!(imports))
                 })
             }),
         );

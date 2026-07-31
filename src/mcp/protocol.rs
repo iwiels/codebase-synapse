@@ -13,7 +13,7 @@ pub enum McpMessage {
     },
     Response {
         jsonrpc: String,
-        id: u64,
+        id: Option<u64>,
         #[serde(skip_serializing_if = "Option::is_none")]
         result: Option<Value>,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -95,13 +95,13 @@ impl McpMessage {
     pub fn success(id: u64, result: Value) -> Self {
         McpMessage::Response {
             jsonrpc: "2.0".into(),
-            id,
+            id: Some(id),
             result: Some(result),
             error: None,
         }
     }
 
-    pub fn error(id: u64, error: McpError) -> Self {
+    pub fn error(id: Option<u64>, error: McpError) -> Self {
         McpMessage::Response {
             jsonrpc: "2.0".into(),
             id,

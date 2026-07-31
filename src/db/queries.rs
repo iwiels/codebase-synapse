@@ -191,6 +191,9 @@ pub fn fts_search(
         .map(|c| if c.is_alphanumeric() { c } else { ' ' })
         .collect();
     let words: Vec<&str> = safe_query.split_whitespace().collect();
+    if words.is_empty() {
+        return Ok(vec![]);
+    }
     let final_query = words.join(" OR ");
 
     let mut stmt = conn.prepare(
