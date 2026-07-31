@@ -127,9 +127,13 @@ fn compute_modularity(assignments: &HashMap<i64, i64>, edges: &[(i64, i64)]) -> 
     for (&node, nbrs) in &adj {
         // Edge endpoints may reference nodes without a cluster assignment
         // (e.g. symbol-level import edges); skip them instead of panicking.
-        let Some(&ci) = assignments.get(&node) else { continue };
+        let Some(&ci) = assignments.get(&node) else {
+            continue;
+        };
         for (&nbr, &w) in nbrs {
-            let Some(&cn) = assignments.get(&nbr) else { continue };
+            let Some(&cn) = assignments.get(&nbr) else {
+                continue;
+            };
             if ci == cn {
                 q += w - degrees[&node] * degrees[&nbr] / m2;
             }

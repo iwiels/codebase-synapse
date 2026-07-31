@@ -617,10 +617,9 @@ impl Indexer {
                 return;
             }
         };
-        let rows: Vec<(i64, String)> = match stmt
-            .query_map(params![project_id], |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-            }) {
+        let rows: Vec<(i64, String)> = match stmt.query_map(params![project_id], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        }) {
             Ok(iter) => iter.filter_map(|r| r.ok()).collect(),
             Err(e) => {
                 warn!("Embedding backfill query failed: {}", e);
@@ -630,7 +629,11 @@ impl Indexer {
         if rows.is_empty() {
             return;
         }
-        info!("Storing embeddings for {} nodes (project_id={})", rows.len(), project_id);
+        info!(
+            "Storing embeddings for {} nodes (project_id={})",
+            rows.len(),
+            project_id
+        );
         for chunk in rows.chunks(64) {
             let texts: Vec<String> = chunk
                 .iter()
@@ -643,12 +646,9 @@ impl Indexer {
                         return;
                     }
                     for ((node_id, _), vec) in chunk.iter().zip(vectors) {
-                        if let Err(e) = db::queries::upsert_embedding(
-                            &conn,
-                            *node_id,
-                            &vec,
-                            "all-MiniLM-L6-v2",
-                        ) {
+                        if let Err(e) =
+                            db::queries::upsert_embedding(&conn, *node_id, &vec, "all-MiniLM-L6-v2")
+                        {
                             warn!("Failed to store embedding for node {}: {}", node_id, e);
                         }
                     }

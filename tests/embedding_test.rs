@@ -1,4 +1,4 @@
-﻿mod common;
+mod common;
 
 use codebase_synapse::db;
 use codebase_synapse::indexer::Indexer;
@@ -53,8 +53,7 @@ fn test_index_repository_stores_embeddings() {
         watch: false,
     });
     let indexer = Indexer::new(config, conn.clone());
-    let embedder: Arc<dyn codebase_synapse::embedding::Embedder> =
-        Arc::new(MockEmbedder);
+    let embedder: Arc<dyn codebase_synapse::embedding::Embedder> = Arc::new(MockEmbedder);
 
     indexer
         .index_repository_with_embedder(root.to_str().unwrap(), &embedder)
@@ -74,11 +73,9 @@ fn test_index_repository_stores_embeddings() {
     assert_eq!(pending_count(&locked), 0, "no node may be left unembedded");
 
     let dims: i64 = locked
-        .query_row(
-            "SELECT dimensions FROM embeddings LIMIT 1",
-            [],
-            |r| r.get(0),
-        )
+        .query_row("SELECT dimensions FROM embeddings LIMIT 1", [], |r| {
+            r.get(0)
+        })
         .unwrap();
     assert_eq!(dims, 384, "embeddings must use the embedder dimensions");
 }
@@ -100,8 +97,7 @@ fn test_index_repository_embedding_backfill_is_idempotent() {
         watch: false,
     });
     let indexer = Indexer::new(config, conn.clone());
-    let embedder: Arc<dyn codebase_synapse::embedding::Embedder> =
-        Arc::new(MockEmbedder);
+    let embedder: Arc<dyn codebase_synapse::embedding::Embedder> = Arc::new(MockEmbedder);
 
     indexer
         .index_repository_with_embedder(root.to_str().unwrap(), &embedder)
@@ -119,7 +115,10 @@ fn test_index_repository_embedding_backfill_is_idempotent() {
         embedding_count(&locked)
     };
 
-    assert_eq!(after_first, after_second, "re-indexing must not duplicate embeddings");
+    assert_eq!(
+        after_first, after_second,
+        "re-indexing must not duplicate embeddings"
+    );
 }
 
 #[test]
@@ -139,8 +138,7 @@ fn test_incremental_update_backfills_embeddings() {
         watch: false,
     });
     let indexer = Indexer::new(config, conn.clone());
-    let embedder: Arc<dyn codebase_synapse::embedding::Embedder> =
-        Arc::new(MockEmbedder);
+    let embedder: Arc<dyn codebase_synapse::embedding::Embedder> = Arc::new(MockEmbedder);
 
     indexer
         .index_repository_with_embedder(root.to_str().unwrap(), &embedder)
@@ -161,7 +159,11 @@ fn test_incremental_update_backfills_embeddings() {
         .unwrap();
 
     let locked = conn.lock().unwrap();
-    assert_eq!(pending_count(&locked), 0, "new nodes from incremental update must be embedded");
+    assert_eq!(
+        pending_count(&locked),
+        0,
+        "new nodes from incremental update must be embedded"
+    );
     let new_fn: i64 = locked
         .query_row(
             "SELECT COUNT(*) FROM embeddings e
@@ -199,5 +201,9 @@ fn test_noop_embedder_skips_embedding() {
         .unwrap();
 
     let locked = conn.lock().unwrap();
-    assert_eq!(embedding_count(&locked), 0, "noop embedder must not write embeddings");
+    assert_eq!(
+        embedding_count(&locked),
+        0,
+        "noop embedder must not write embeddings"
+    );
 }

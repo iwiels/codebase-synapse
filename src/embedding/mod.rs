@@ -65,8 +65,7 @@ impl Embedder for LazyEmbedder {
 
 /// Shared noop used when a real embedder is unavailable (feature disabled
 /// or a transient init failure). Never cached by `LazyEmbedder`.
-static NOOP_FALLBACK: LazyLock<Arc<dyn Embedder>> =
-    LazyLock::new(|| Arc::new(NoopEmbedder));
+static NOOP_FALLBACK: LazyLock<Arc<dyn Embedder>> = LazyLock::new(|| Arc::new(NoopEmbedder));
 
 /// Build the real embedder (Candle BERT).
 /// Expensive: downloads the model on first run and builds the graph.
@@ -77,7 +76,10 @@ fn create_real_embedder() -> Option<Arc<dyn Embedder>> {
     match CandleEmbedder::new() {
         Ok(emb) => Some(Arc::new(emb)),
         Err(e) => {
-            tracing::warn!("Failed to initialize Candle embedder ({}), retrying on next use", e);
+            tracing::warn!(
+                "Failed to initialize Candle embedder ({}), retrying on next use",
+                e
+            );
             None
         }
     }

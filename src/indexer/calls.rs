@@ -160,8 +160,8 @@ pub fn resolve_project_calls(conn: &Connection, project_id: i64) -> Result<()> {
                 // Method calls resolve only within the same file to avoid
                 // false positives like `.map()` on arrays or `.filter()` on
                 // iterables.
-                if let Some(nodes) = func_by_file_name
-                    .get(&(source_node.file_path.clone(), target_name.clone()))
+                if let Some(nodes) =
+                    func_by_file_name.get(&(source_node.file_path.clone(), target_name.clone()))
                 {
                     if let Some(method) = nodes.iter().find(|n| n.kind == "method") {
                         resolved_id = Some(method.id);
@@ -169,8 +169,8 @@ pub fn resolve_project_calls(conn: &Connection, project_id: i64) -> Result<()> {
                 }
             } else {
                 // Signal 1: Local file match (High priority)
-                if let Some(nodes) = func_by_file_name
-                    .get(&(source_node.file_path.clone(), target_name.clone()))
+                if let Some(nodes) =
+                    func_by_file_name.get(&(source_node.file_path.clone(), target_name.clone()))
                 {
                     let local_node = nodes
                         .iter()
