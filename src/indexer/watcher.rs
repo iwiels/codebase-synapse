@@ -7,21 +7,28 @@ use anyhow::Result;
 use notify::{Config, EventKind, RecommendedWatcher, RecursiveMode, Watcher as NotifyWatcher};
 use tracing::{info, warn};
 
+use crate::embedding::Embedder;
 use crate::indexer::Indexer;
 
 pub struct FileWatcher {
     indexer: Arc<Indexer>,
     repo_path: String,
+    embedder: Arc<dyn Embedder>,
 }
 
 impl FileWatcher {
-    pub fn new(indexer: Arc<Indexer>, repo_path: String) -> Self {
-        Self { indexer, repo_path }
+    pub fn new(indexer: Arc<Indexer>, repo_path: String, embedder: Arc<dyn Embedder>) -> Self {
+        Self {
+            indexer,
+            repo_path,
+            embedder,
+        }
     }
 
     pub fn start(&self) -> Result<()> {
         let repo_path = self.repo_path.clone();
         let indexer = self.indexer.clone();
+        let embedder = self.embedder.clone();
         let (tx, rx) = mpsc::channel::<Vec<String>>();
 
         let mut watcher = RecommendedWatcher::new(
@@ -68,7 +75,9 @@ impl FileWatcher {
                 if !pending.is_empty() && last_update.elapsed() >= Duration::from_millis(500) {
                     let changed: Vec<String> = std::mem::take(&mut pending);
                     info!("Detected {} changed files, re-indexing", changed.len());
-                    if let Err(e) = indexer.incremental_update(&repo_path, &changed) {
+                    if let Err(e) =
+                        indexer.incremental_update_with_embedder(&repo_path, &changed, &embedder)
+                    {
                         warn!("Incremental update error: {}", e);
                     }
                 }

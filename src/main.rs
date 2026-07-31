@@ -76,9 +76,12 @@ fn main() -> anyhow::Result<()> {
             if cli.run_tool.is_none() {
                 info!("Spawning background auto-indexing for: {}", repo_path);
                 let indexer_clone = indexer.clone();
-                std::thread::spawn(move || match indexer_clone.index_repository(&repo_path) {
-                    Err(e) => error!("Failed to index repository in background: {}", e),
-                    _ => info!("Background auto-indexing complete"),
+                let emb = embedder.clone();
+                std::thread::spawn(move || {
+                    match indexer_clone.index_repository_with_embedder(&repo_path, &emb) {
+                        Err(e) => error!("Failed to index repository in background: {}", e),
+                        _ => info!("Background auto-indexing complete"),
+                    }
                 });
             }
         }
@@ -88,7 +91,7 @@ fn main() -> anyhow::Result<()> {
         conn,
         config.clone(),
         indexer.clone(),
-        embedder,
+        embedder.clone(),
         progress,
     ));
 
@@ -107,7 +110,11 @@ fn main() -> anyhow::Result<()> {
 
     if config.watch {
         if let Some(ref project_root) = config.project_root {
-            let watcher = FileWatcher::new(indexer, project_root.to_string_lossy().to_string());
+            let watcher = FileWatcher::new(
+                indexer,
+                project_root.to_string_lossy().to_string(),
+                embedder.clone(),
+            );
             watcher.start().context("Failed to start file watcher")?;
         }
     }
