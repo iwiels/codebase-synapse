@@ -50,7 +50,6 @@ fn test_index_repository_stores_embeddings() {
         project_root: Some(tmp.path().to_path_buf()),
         graph_only: false,
         log_level: "info".to_string(),
-        watch: false,
     });
     let indexer = Indexer::new(config, conn.clone());
     let embedder: Arc<dyn codebase_synapse::embedding::Embedder> = Arc::new(MockEmbedder);
@@ -94,7 +93,6 @@ fn test_index_repository_embedding_backfill_is_idempotent() {
         project_root: Some(tmp.path().to_path_buf()),
         graph_only: false,
         log_level: "info".to_string(),
-        watch: false,
     });
     let indexer = Indexer::new(config, conn.clone());
     let embedder: Arc<dyn codebase_synapse::embedding::Embedder> = Arc::new(MockEmbedder);
@@ -135,7 +133,6 @@ fn test_incremental_update_backfills_embeddings() {
         project_root: Some(tmp.path().to_path_buf()),
         graph_only: false,
         log_level: "info".to_string(),
-        watch: false,
     });
     let indexer = Indexer::new(config, conn.clone());
     let embedder: Arc<dyn codebase_synapse::embedding::Embedder> = Arc::new(MockEmbedder);
@@ -190,7 +187,6 @@ fn test_noop_embedder_skips_embedding() {
         project_root: Some(tmp.path().to_path_buf()),
         graph_only: false,
         log_level: "info".to_string(),
-        watch: false,
     });
     let indexer = Indexer::new(config, conn.clone());
     let noop: Arc<dyn codebase_synapse::embedding::Embedder> =

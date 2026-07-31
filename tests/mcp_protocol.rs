@@ -55,7 +55,11 @@ fn test_list_tools() {
     assert!(!tools.is_empty(), "Tool registry should expose tools");
 
     let has_index_tool = tools.iter().any(|t| t["name"] == "index_repository");
-    assert!(has_index_tool, "Exposes index_repository tool");
+    assert!(has_index_tool, "Exposes async index_repository tool");
+    let has_job_status = tools.iter().any(|t| t["name"] == "get_job_status");
+    assert!(has_job_status, "Exposes get_job_status polling tool");
+    let has_search_tool = tools.iter().any(|t| t["name"] == "search_symbol");
+    assert!(has_search_tool, "Exposes search_symbol tool");
 }
 
 #[test]

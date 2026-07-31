@@ -13,10 +13,19 @@ use super::protocol::*;
 use super::tools::ToolRegistry;
 use std::sync::Mutex;
 
+/// Shared stdout writer used by BOTH the transport responses and the
+/// progress notifications. Holding the global `stdout` lock for the whole
+/// run loop (as before) deadlocks any background thread that writes
+/// progress: `Stdout`'s reentrant mutex is per-thread, so a second thread
+/// blocks forever. Locking only around each individual write keeps the
+/// stream line-atomic and deadlock-free.
+pub static SHARED_WRITER: LazyLock<Arc<Mutex<Box<dyn Write + Send>>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(Box::new(std::io::stdout()))));
+
 /// Thread-safe sender for MCP progress notifications.
-/// Writes JSON-RPC notifications directly to stdout.
+/// Writes JSON-RPC notifications to stdout under the shared writer lock.
 pub struct ProgressSender {
-    writer: Mutex<Box<dyn Write + Send>>,
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
 }
 
 impl Default for ProgressSender {
@@ -28,7 +37,7 @@ impl Default for ProgressSender {
 impl ProgressSender {
     pub fn new() -> Self {
         Self {
-            writer: Mutex::new(Box::new(std::io::stdout())),
+            writer: SHARED_WRITER.clone(),
         }
     }
 
@@ -64,8 +73,6 @@ impl McpTransport {
 
     pub fn run(&self) -> Result<()> {
         let stdin = std::io::stdin();
-        let stdout = std::io::stdout();
-        let mut writer = stdout.lock();
 
         for line in stdin.lock().lines() {
             if SHUTDOWN.load(Ordering::Relaxed) {
@@ -80,7 +87,9 @@ impl McpTransport {
             };
 
             if let Some(output) = self.handle_message(&line)? {
+                let mut writer = SHARED_WRITER.lock().expect("stdout writer poisoned");
                 if writeln!(writer, "{}", output).is_err() || writer.flush().is_err() {
+                    drop(writer);
                     warn!("MCP client disconnected, shutting down");
                     break;
                 }

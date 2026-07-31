@@ -1,10 +1,10 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use rusqlite::Connection;
 use serde_json::{json, Value};
-use tracing::{info, warn};
 
 use crate::config::Config;
 use crate::context::ContextBudget;
@@ -23,8 +23,8 @@ type SharedConn = Arc<Mutex<Connection>>;
 pub struct ToolRegistry {
     tools: HashMap<String, ToolDef>,
     handlers: HashMap<String, ToolHandler>,
-    #[allow(dead_code)]
     progress: Arc<crate::mcp::transport::ProgressSender>,
+    jobs: JobRegistry,
 }
 
 struct ToolDef {
@@ -33,11 +33,86 @@ struct ToolDef {
     input_schema: Value,
 }
 
+#[derive(Clone)]
+pub struct JobRegistry {
+    inner: Arc<Mutex<HashMap<u64, Arc<Mutex<JobState>>>>>,
+    next_id: Arc<AtomicU64>,
+}
+
+impl Default for JobRegistry {
+    fn default() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(HashMap::new())),
+            next_id: Arc::new(AtomicU64::new(1)),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct JobState {
+    pub kind: String,
+    pub repo_path: String,
+    pub status: String,
+    pub progress: usize,
+    pub total: usize,
+    pub message: String,
+    pub error: Option<String>,
+}
+
+impl JobState {
+    fn new(kind: &str, repo_path: &str) -> Self {
+        Self {
+            kind: kind.to_string(),
+            repo_path: repo_path.to_string(),
+            status: "queued".to_string(),
+            progress: 0,
+            total: 0,
+            message: "Queued".to_string(),
+            error: None,
+        }
+    }
+}
+
+impl JobRegistry {
+    fn spawn(&self, kind: &str, repo_path: &str) -> (u64, Arc<Mutex<JobState>>) {
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let state = Arc::new(Mutex::new(JobState::new(kind, repo_path)));
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.insert(id, state.clone());
+        }
+        (id, state)
+    }
+
+    fn get(&self, id: u64) -> Option<JobState> {
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|m| m.get(&id).cloned())
+            .and_then(|arc| arc.lock().ok().map(|g| g.clone()))
+    }
+}
+
+fn update_job_state(state: &Arc<Mutex<JobState>>, f: impl FnOnce(&mut JobState)) {
+    if let Ok(mut s) = state.lock() {
+        f(&mut s);
+    }
+}
+
+fn job_progress_hook(state: &Arc<Mutex<JobState>>) -> crate::indexer::ProgressHook {
+    let st = state.clone();
+    Arc::new(move |step, total, msg| {
+        if let Ok(mut s) = st.lock() {
+            s.progress = step;
+            s.total = total;
+            s.message = msg.to_string();
+        }
+    })
+}
+
 impl ToolRegistry {
     pub fn new(
         conn: SharedConn,
         config: Arc<Config>,
-        indexer: Arc<Indexer>,
         embedder: Arc<dyn Embedder>,
         progress: Arc<crate::mcp::transport::ProgressSender>,
     ) -> Self {
@@ -45,11 +120,13 @@ impl ToolRegistry {
             tools: HashMap::new(),
             handlers: HashMap::new(),
             progress: progress.clone(),
+            jobs: JobRegistry::default(),
         };
 
         let session = Arc::new(Mutex::new(SessionMemory::new(100)));
 
-        registry.register_index_tools(&conn, &config, &indexer, &embedder);
+        registry.register_project_tools(&conn);
+        registry.register_index_tools(&config, &embedder);
         registry.register_search_tools(&conn, &embedder);
         registry.register_graph_tools(&conn);
         registry.register_memory_tools(&conn, &session);
@@ -85,41 +162,7 @@ impl ToolRegistry {
         f(&guard)
     }
 
-    fn register_index_tools(
-        &mut self,
-        conn: &SharedConn,
-        _config: &Arc<Config>,
-        indexer: &Arc<Indexer>,
-        embedder: &Arc<dyn Embedder>,
-    ) {
-        let _c = conn.clone();
-        let idx = indexer.clone();
-        let emb = embedder.clone();
-        let indexing_busy = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        self.register(
-            "index_repository",
-            "Index a repository into the knowledge graph. Runs in the background; poll get_status to monitor embedding progress.",
-            json!({"type":"object","properties":{"repo_path":{"type":"string"}},"required":["repo_path"]}),
-            Arc::new(move |params| {
-                let repo_path = params["repo_path"].as_str().ok_or_else(|| anyhow::anyhow!("Missing repo_path"))?.to_string();
-                if indexing_busy.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                    return Ok(json!({"status":"busy","message":"An index is already running; poll get_status."}));
-                }
-                let idx = idx.clone();
-                let emb = emb.clone();
-                let busy = indexing_busy.clone();
-                std::thread::spawn(move || {
-                    let result = idx.index_repository_with_embedder(&repo_path, &emb);
-                    busy.store(false, std::sync::atomic::Ordering::SeqCst);
-                    match result {
-                        Ok(_) => info!("Background index of {} finished", repo_path),
-                        Err(e) => warn!("Background index of {} failed: {}", repo_path, e),
-                    }
-                });
-                Ok(json!({"status":"started","message":"Indexing started in background; poll get_status for progress."}))
-            }),
-        );
-
+    fn register_project_tools(&mut self, conn: &SharedConn) {
         let c2 = conn.clone();
         self.register(
             "list_projects",
@@ -144,42 +187,167 @@ impl ToolRegistry {
                     .ok_or_else(|| anyhow::anyhow!("Missing name"))?;
                 Self::conn(&c3, |conn| {
                     let project = db::queries::get_project(conn, name)?;
-                    if let Some(p) = project {
-                        db::queries::delete_project(conn, p.id)?;
+                    match project {
+                        Some(p) => {
+                            db::queries::delete_project(conn, p.id)?;
+                            Ok(json!({"status":"deleted"}))
+                        }
+                        None => Err(anyhow::anyhow!("Project not found: {}", name)),
                     }
-                    Ok(json!({"status":"deleted"}))
                 })
             }),
         );
+    }
 
-        let _c4 = conn.clone();
-        let idx2 = indexer.clone();
-        let emb2 = embedder.clone();
-        let reindex_busy = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    fn register_index_tools(&mut self, config: &Arc<Config>, embedder: &Arc<dyn Embedder>) {
+        let jobs = self.jobs.clone();
+        let cfg = config.clone();
+        let emb = embedder.clone();
+        let progress = self.progress.clone();
+
+        // ─── index_repository (async) ───
+        let jobs2 = jobs.clone();
+        let cfg2 = cfg.clone();
+        let emb2 = emb.clone();
+        let progress2 = progress.clone();
         self.register(
-            "reindex_changed",
-            "Incremental reindex of changed files. Runs in the background; poll get_status to monitor embedding progress.",
-            json!({"type":"object","properties":{"repo_path":{"type":"string"},"files":{"type":"array","items":{"type":"string"}}},"required":["repo_path"]}),
+            "index_repository",
+            "Index a repository into the knowledge graph. Runs in the background: returns a job_id immediately; poll get_job_status(job_id) for progress and follow notifications/progress.",
+            json!({"type":"object","properties":{"repo_path":{"type":"string"}},"required":["repo_path"]}),
             Arc::new(move |params| {
-                let repo_path = params["repo_path"].as_str().ok_or_else(|| anyhow::anyhow!("Missing repo_path"))?.to_string();
-                let files: Vec<String> = params["files"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect()).unwrap_or_default();
-                let file_count = files.len();
-                if reindex_busy.swap(true, std::sync::atomic::Ordering::SeqCst) {
-                    return Ok(json!({"status":"busy","message":"An incremental reindex is already running; poll get_status."}));
-                }
-                let idx2 = idx2.clone();
-                let emb2 = emb2.clone();
-                let busy = reindex_busy.clone();
-                let repo_path2 = repo_path.clone();
+                let repo_path = params["repo_path"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Missing repo_path"))?
+                    .to_string();
+                let (job_id, state) = jobs2.spawn("index_repository", &repo_path);
+                let cfg3 = cfg2.clone();
+                let emb3 = emb2.clone();
+                let progress3 = progress2.clone();
+                let state3 = state.clone();
                 std::thread::spawn(move || {
-                    let result = idx2.incremental_update_with_embedder(&repo_path2, &files, &emb2);
-                    busy.store(false, std::sync::atomic::Ordering::SeqCst);
+                    update_job_state(&state3, |s| {
+                        s.status = "running".to_string();
+                        s.message = "Indexing started".to_string();
+                    });
+                    let hook = job_progress_hook(&state3);
+                    let result = db::open(&cfg3.db_path())
+                        .map_err(|e| {
+                            anyhow::anyhow!("Failed to open DB for background index: {}", e)
+                        })
+                        .and_then(|c| {
+                            Indexer::new(cfg3, Arc::new(Mutex::new(c)))
+                                .with_progress(progress3)
+                                .with_progress_token(job_id.to_string())
+                                .with_progress_hook(hook)
+                                .index_repository_with_embedder(&repo_path, &emb3)
+                        });
                     match result {
-                        Ok(_) => info!("Background incremental reindex of {} finished ({} files)", repo_path2, file_count),
-                        Err(e) => warn!("Background incremental reindex of {} failed: {}", repo_path2, e),
+                        Ok(_) => update_job_state(&state3, |s| {
+                            s.status = "done".to_string();
+                            s.message = "Indexing complete".to_string();
+                        }),
+                        Err(e) => {
+                            let m = e.to_string();
+                            update_job_state(&state3, |s| {
+                                s.status = "error".to_string();
+                                s.error = Some(m);
+                            });
+                        }
                     }
                 });
-                Ok(json!({"status":"started","files":file_count,"message":"Incremental reindex started in background; poll get_status for progress."}))
+                Ok(json!({
+                    "job_id": job_id,
+                    "status": "started",
+                    "message": "Indexing started in background; poll get_job_status(job_id)"
+                }))
+            }),
+        );
+
+        // ─── reindex_changed (async) ───
+        let jobs3 = jobs.clone();
+        let cfg3 = cfg.clone();
+        let emb3 = emb.clone();
+        let progress3 = progress.clone();
+        self.register(
+            "reindex_changed",
+            "Incremental reindex of changed files. Runs in the background: returns a job_id immediately; poll get_job_status(job_id) for progress and follow notifications/progress.",
+            json!({"type":"object","properties":{"repo_path":{"type":"string"},"files":{"type":"array","items":{"type":"string"}}},"required":["repo_path"]}),
+            Arc::new(move |params| {
+                let repo_path = params["repo_path"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("Missing repo_path"))?
+                    .to_string();
+                let files: Vec<String> = params["files"]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                let (job_id, state) = jobs3.spawn("reindex_changed", &repo_path);
+                let cfg4 = cfg3.clone();
+                let emb4 = emb3.clone();
+                let progress4 = progress3.clone();
+                let state4 = state.clone();
+                std::thread::spawn(move || {
+                    update_job_state(&state4, |s| {
+                        s.status = "running".to_string();
+                        s.message = "Reindex started".to_string();
+                    });
+                    let hook = job_progress_hook(&state4);
+                    let result = db::open(&cfg4.db_path())
+                        .map_err(|e| {
+                            anyhow::anyhow!("Failed to open DB for background reindex: {}", e)
+                        })
+                        .and_then(|c| {
+                            Indexer::new(cfg4, Arc::new(Mutex::new(c)))
+                                .with_progress(progress4)
+                                .with_progress_token(job_id.to_string())
+                                .with_progress_hook(hook)
+                                .incremental_update_with_embedder(&repo_path, &files, &emb4)
+                        });
+                    match result {
+                        Ok(_) => update_job_state(&state4, |s| {
+                            s.status = "done".to_string();
+                            s.message = "Reindex complete".to_string();
+                        }),
+                        Err(e) => {
+                            let m = e.to_string();
+                            update_job_state(&state4, |s| {
+                                s.status = "error".to_string();
+                                s.error = Some(m);
+                            });
+                        }
+                    }
+                });
+                Ok(json!({
+                    "job_id": job_id,
+                    "status": "started",
+                    "message": "Reindex started in background; poll get_job_status(job_id)"
+                }))
+            }),
+        );
+
+        // ─── get_job_status (polling) ───
+        let jobs4 = jobs.clone();
+        self.register(
+            "get_job_status",
+            "Get the status and progress of a background indexing job (index_repository / reindex_changed). Poll this until status is 'done' or 'error'.",
+            json!({"type":"object","properties":{"job_id":{"type":"integer"}},"required":["job_id"]}),
+            Arc::new(move |params| {
+                let job_id = params["job_id"]
+                    .as_i64()
+                    .ok_or_else(|| anyhow::anyhow!("Missing job_id"))? as u64;
+                match jobs4.get(job_id) {
+                    Some(st) => Ok(json!({
+                        "job_id": job_id,
+                        "kind": st.kind,
+                        "repo_path": st.repo_path,
+                        "status": st.status,
+                        "progress": st.progress,
+                        "total": st.total,
+                        "message": st.message,
+                        "error": st.error,
+                    })),
+                    None => Err(anyhow::anyhow!("Unknown job_id: {}", job_id)),
+                }
             }),
         );
     }
@@ -1286,7 +1454,7 @@ impl ToolRegistry {
         let c2 = conn.clone();
         self.register(
             "index_git_history",
-            "Index git commit history for a project. Enables get_hotspots and git_archaeology. Run once after index_repository. max_commits defaults to 500.",
+            "Index git commit history for a project. Enables get_hotspots and git_archaeology. Run once after indexing with `codebase-synapse index <path>`. max_commits defaults to 500.",
             json!({"type":"object","properties":{"project":{"type":"string"},"repo_path":{"type":"string"},"max_commits":{"type":"integer","default":500}},"required":["project","repo_path"]}),
             Arc::new(move |params| {
                 let pname = params["project"].as_str().unwrap_or("default");
@@ -1485,13 +1653,7 @@ mod tests {
     use super::*;
     use crate::db::schema::migrate;
 
-    fn test_registry() -> (
-        ToolRegistry,
-        SharedConn,
-        Arc<Config>,
-        Arc<Indexer>,
-        Arc<dyn Embedder>,
-    ) {
+    fn test_registry() -> (ToolRegistry, SharedConn, Arc<Config>, Arc<dyn Embedder>) {
         let conn = Arc::new(Mutex::new(Connection::open_in_memory().unwrap()));
         {
             let c = conn.lock().unwrap();
@@ -1502,24 +1664,16 @@ mod tests {
             project_root: None,
             graph_only: false,
             log_level: "off".into(),
-            watch: false,
         });
-        let indexer = Arc::new(Indexer::new(config.clone(), conn.clone()));
         let embedder = Arc::new(crate::embedding::NoopEmbedder);
         let progress = Arc::new(crate::mcp::transport::ProgressSender::new());
-        let registry = ToolRegistry::new(
-            conn.clone(),
-            config.clone(),
-            indexer.clone(),
-            embedder.clone(),
-            progress,
-        );
-        (registry, conn, config, indexer, embedder)
+        let registry = ToolRegistry::new(conn.clone(), config.clone(), embedder.clone(), progress);
+        (registry, conn, config, embedder)
     }
 
     #[test]
     fn test_tool_registry_creation() {
-        let (registry, _, _, _, _) = test_registry();
+        let (registry, _, _, _) = test_registry();
         let defs = registry.get_tool_definitions();
         assert!(
             defs.len() >= 20,
@@ -1527,7 +1681,6 @@ mod tests {
             defs.len()
         );
         let names: Vec<&str> = defs.iter().filter_map(|t| t["name"].as_str()).collect();
-        assert!(names.contains(&"index_repository"));
         assert!(names.contains(&"search_symbol"));
         assert!(names.contains(&"memory_store"));
         assert!(names.contains(&"get_status"));
@@ -1538,21 +1691,21 @@ mod tests {
 
     #[test]
     fn test_tool_not_found() {
-        let (registry, _, _, _, _) = test_registry();
+        let (registry, _, _, _) = test_registry();
         let result = registry.handle("nonexistent_tool", json!({}));
         assert!(result.is_err());
     }
 
     #[test]
     fn test_has_tool() {
-        let (registry, _, _, _, _) = test_registry();
+        let (registry, _, _, _) = test_registry();
         assert!(registry.has_tool("get_status"));
         assert!(!registry.has_tool("fake_tool"));
     }
 
     #[test]
     fn test_get_status_tool() {
-        let (registry, _, _, _, _) = test_registry();
+        let (registry, _, _, _) = test_registry();
         let result = registry.handle("get_status", json!({})).unwrap();
         assert_eq!(result["status"], "ok");
         assert!(result["version"].as_str().is_some());
@@ -1560,7 +1713,7 @@ mod tests {
 
     #[test]
     fn test_get_stats_tool_missing_project() {
-        let (registry, _, _, _, _) = test_registry();
+        let (registry, _, _, _) = test_registry();
         let result = registry.handle("get_stats", json!({"project": "nonexistent"}));
         assert!(result.is_err());
     }

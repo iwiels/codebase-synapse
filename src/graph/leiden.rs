@@ -75,6 +75,14 @@ pub fn leiden_raw(
         return (community, 0.0);
     }
 
+    // Community total degree, maintained incrementally so a node move is
+    // O(degree) instead of O(N). This turns the whole local-move phase
+    // from O(iterations * N^2 * communities) into O(iterations * edges).
+    let mut comm_degree: HashMap<i64, f64> = HashMap::new();
+    for &n in &sorted_nodes {
+        *comm_degree.entry(community[&n]).or_insert(0.0) += degrees[&n];
+    }
+
     // Louvain local move phase
     for _ in 0..config.max_iterations {
         let mut moved = false;
@@ -89,11 +97,7 @@ pub fn leiden_raw(
             }
 
             let ki_in_old = neighbor_comms.get(&current_c).copied().unwrap_or(0.0);
-            let k_old: f64 = sorted_nodes
-                .iter()
-                .filter(|&&n| community[&n] == current_c)
-                .map(|&n| degrees[&n])
-                .sum();
+            let k_old = comm_degree[&current_c];
 
             let mut best_c = current_c;
             let mut best_delta = 0.0f64;
@@ -102,11 +106,7 @@ pub fn leiden_raw(
                 if cand_c == current_c {
                     continue;
                 }
-                let k_cand: f64 = sorted_nodes
-                    .iter()
-                    .filter(|&&n| community[&n] == cand_c)
-                    .map(|&n| degrees[&n])
-                    .sum();
+                let k_cand = comm_degree[&cand_c];
 
                 // ΔQ = (ki_in_new - ki_in_old) / M - resolution * ki * (k_cand - k_old + ki) / M^2
                 let delta = (ki_in_new - ki_in_old) / m2
@@ -119,6 +119,8 @@ pub fn leiden_raw(
             }
             if best_c != current_c {
                 community.insert(node, best_c);
+                *comm_degree.entry(current_c).or_insert(0.0) -= ki;
+                *comm_degree.entry(best_c).or_insert(0.0) += ki;
                 moved = true;
             }
         }
@@ -130,25 +132,21 @@ pub fn leiden_raw(
     // Leiden refinement: split disconnected sub-communities
     let mut final_comm = community.clone();
     let mut next_id: i64 = *final_comm.values().max().unwrap_or(&0) + 1;
-    let unique_comms: Vec<i64> = {
-        let mut v: Vec<i64> = final_comm.values().cloned().collect();
-        v.sort_unstable();
-        v.dedup();
-        v
-    };
-    for comm_id in unique_comms {
-        let members: Vec<i64> = sorted_nodes
-            .iter()
-            .filter(|&&n| final_comm[&n] == comm_id)
-            .cloned()
-            .collect();
+    let mut members_by_comm: HashMap<i64, Vec<i64>> = HashMap::new();
+    for &n in &sorted_nodes {
+        members_by_comm.entry(final_comm[&n]).or_default().push(n);
+    }
+    let mut comm_ids: Vec<i64> = members_by_comm.keys().cloned().collect();
+    comm_ids.sort_unstable();
+    for comm_id in comm_ids {
+        let members = &members_by_comm[&comm_id];
         if members.len() <= 1 {
             continue;
         }
         let member_set: HashSet<i64> = members.iter().cloned().collect();
         let mut visited: HashSet<i64> = HashSet::new();
         let mut components: Vec<Vec<i64>> = Vec::new();
-        for &start in &members {
+        for &start in members {
             if visited.contains(&start) {
                 continue;
             }

@@ -1,8 +1,9 @@
 mod common;
 
-use common::{parse_tool_result, setup_test_server, tool_call_json};
+use common::{parse_tool_result, setup_test_server, tool_call_json, MockEmbedder};
 use serde_json::json;
 use std::fs;
+use std::sync::Arc;
 
 #[test]
 fn test_e2e_indexing_and_searching() {
@@ -39,32 +40,24 @@ export function handleRequest() {
     )
     .unwrap();
 
-    // 1. Index Repository (runs in the background)
-    let index_req = tool_call_json(
-        "index_repository",
-        json!({ "repo_path": root.to_str().unwrap() }),
-    );
-    let index_res_str = server.transport.handle_message(&index_req).unwrap();
-    let index_res = parse_tool_result(&index_res_str);
-    assert_eq!(index_res["status"], "started");
+    // 1. Index Repository (CLI-style, synchronous)
+    let embedder: Arc<dyn codebase_synapse::embedding::Embedder> = Arc::new(MockEmbedder);
+    server
+        .indexer
+        .index_repository_with_embedder(root.to_str().unwrap(), &embedder)
+        .unwrap();
 
-    // 2. List Projects (poll until the background index lands the project)
-    let mut proj_name = String::new();
-    for _ in 0..200 {
-        let list_req = tool_call_json("list_projects", json!({}));
-        let list_res_str = server.transport.handle_message(&list_req).unwrap();
-        let list_res = parse_tool_result(&list_res_str);
-        let projects = list_res["projects"].as_array().unwrap();
-        if let Some(p) = projects.first() {
-            proj_name = p["name"].as_str().unwrap().to_string();
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(50));
-    }
-    assert!(
-        !proj_name.is_empty(),
-        "project should appear after background index"
-    );
+    // 2. List Projects
+    let list_req = tool_call_json("list_projects", json!({}));
+    let list_res_str = server.transport.handle_message(&list_req).unwrap();
+    let list_res = parse_tool_result(&list_res_str);
+    let projects = list_res["projects"].as_array().unwrap();
+    let proj_name = projects
+        .first()
+        .expect("project should appear after indexing")["name"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     // 3. Search Symbol
     let search_sym_req = tool_call_json(

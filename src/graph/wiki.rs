@@ -29,7 +29,7 @@ pub fn render_wiki(
     md.push_str(&format!("> Modularity score: **{:.4}**\n\n", modularity));
 
     if clusters.is_empty() {
-        md.push_str("_No clusters. Run `index_repository` first._\n");
+        md.push_str("_No clusters. Run `codebase-synapse index <path>` first._\n");
         return md;
     }
 

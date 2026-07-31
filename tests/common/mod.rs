@@ -23,6 +23,7 @@ impl Embedder for MockEmbedder {
 
 pub struct TestServer {
     pub conn: Arc<Mutex<Connection>>,
+    pub indexer: Arc<Indexer>,
     pub registry: Arc<ToolRegistry>,
     pub transport: McpTransport,
     pub temp_dir: TempDir,
@@ -39,7 +40,6 @@ pub fn setup_test_server() -> TestServer {
         project_root: Some(temp_dir.path().to_path_buf()),
         graph_only: false,
         log_level: "info".to_string(),
-        watch: false,
     });
 
     let indexer = Arc::new(Indexer::new(config.clone(), conn.clone()));
@@ -48,7 +48,6 @@ pub fn setup_test_server() -> TestServer {
     let registry = Arc::new(ToolRegistry::new(
         conn.clone(),
         config.clone(),
-        indexer.clone(),
         embedder,
         progress,
     ));
@@ -56,6 +55,7 @@ pub fn setup_test_server() -> TestServer {
 
     TestServer {
         conn,
+        indexer,
         registry,
         transport,
         temp_dir,

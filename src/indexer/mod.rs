@@ -21,15 +21,17 @@ pub mod manifests;
 pub mod merkle;
 pub mod routes;
 pub mod walker;
-mod watcher;
-pub use watcher::FileWatcher;
 
 type IndexResult = Result<Option<(String, String, String, extractors::ExtractionResult)>>;
+
+pub type ProgressHook = Arc<dyn Fn(usize, usize, &str) + Send + Sync>;
 
 pub struct Indexer {
     _config: Arc<Config>,
     conn: Arc<std::sync::Mutex<Connection>>,
     progress: Option<Arc<crate::mcp::transport::ProgressSender>>,
+    progress_token: String,
+    progress_hook: Option<ProgressHook>,
 }
 
 impl Indexer {
@@ -38,6 +40,8 @@ impl Indexer {
             _config: config,
             conn,
             progress: None,
+            progress_token: "index".to_string(),
+            progress_hook: None,
         }
     }
 
@@ -46,9 +50,27 @@ impl Indexer {
         self
     }
 
+    /// Override the progress token carried by `notifications/progress`
+    /// (defaults to "index"). Async MCP jobs set this to the job id so
+    /// clients can correlate notifications with the job they started.
+    pub fn with_progress_token(mut self, token: impl Into<String>) -> Self {
+        self.progress_token = token.into();
+        self
+    }
+
+    /// Optional callback invoked on each progress step. Used by async MCP
+    /// jobs to update their pollable job state in `get_job_status`.
+    pub fn with_progress_hook(mut self, hook: ProgressHook) -> Self {
+        self.progress_hook = Some(hook);
+        self
+    }
+
     fn emit_progress(&self, step: usize, total: usize, message: &str) {
         if let Some(ref p) = self.progress {
-            p.send("index_repository", step, total, message);
+            p.send(&self.progress_token, step, total, message);
+        }
+        if let Some(ref h) = self.progress_hook {
+            h(step, total, message);
         }
     }
 
@@ -86,11 +108,6 @@ impl Indexer {
             .map_err(|e| anyhow::anyhow!("Failed to upsert project '{}': {}", repo_name, e))?;
         let project_id = project.id;
 
-        let files = walker::walk_files(path)
-            .with_context(|| format!("Failed to walk files in {}", repo_path))?;
-        info!("Found {} files to index", files.len());
-        self.emit_progress(1, 7, &format!("Found {} files, parsing...", files.len()));
-
         // Step 1: Fetch all existing file states to avoid locking during parallel hashing
         let existing_states =
             db::queries::get_all_file_states(&conn, project_id).unwrap_or_else(|e| {
@@ -103,6 +120,11 @@ impl Indexer {
 
         // Release lock before starting parallel CPU-bound parsing/extraction
         drop(conn);
+
+        let files = walker::walk_files(path)
+            .with_context(|| format!("Failed to walk files in {}", repo_path))?;
+        info!("Found {} files to index", files.len());
+        self.emit_progress(1, 7, &format!("Found {} files, parsing...", files.len()));
 
         // Step 2: Parallel file reading, hashing, parsing, and extraction
         let results: Vec<IndexResult> = files
@@ -599,32 +621,40 @@ impl Indexer {
         if embedder.dimensions() == 0 {
             return;
         }
-        let conn = match self.conn.lock() {
-            Ok(c) => c,
-            Err(e) => {
-                warn!("Embedding backfill skipped (DB lock poisoned): {}", e);
-                return;
+        let rows: Vec<(i64, String)> = {
+            let conn = match self.conn.lock() {
+                Ok(c) => c,
+                Err(e) => {
+                    warn!("Embedding backfill skipped (DB lock poisoned): {}", e);
+                    return;
+                }
+            };
+            let mut stmt = match conn.prepare(
+                "SELECT n.id, n.source FROM nodes n
+                 LEFT JOIN embeddings e ON e.node_id = n.id
+                 WHERE n.project_id = ?1 AND e.node_id IS NULL AND n.source IS NOT NULL",
+            ) {
+                Ok(s) => s,
+                Err(e) => {
+                    warn!("Embedding backfill failed to prepare query: {}", e);
+                    return;
+                }
+            };
+            let mut out = Vec::new();
+            match stmt.query_map(params![project_id], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            }) {
+                Ok(iter) => {
+                    for row in iter.flatten() {
+                        out.push(row);
+                    }
+                }
+                Err(e) => {
+                    warn!("Embedding backfill query failed: {}", e);
+                    return;
+                }
             }
-        };
-        let mut stmt = match conn.prepare(
-            "SELECT n.id, n.source FROM nodes n
-             LEFT JOIN embeddings e ON e.node_id = n.id
-             WHERE n.project_id = ?1 AND e.node_id IS NULL AND n.source IS NOT NULL",
-        ) {
-            Ok(s) => s,
-            Err(e) => {
-                warn!("Embedding backfill failed to prepare query: {}", e);
-                return;
-            }
-        };
-        let rows: Vec<(i64, String)> = match stmt.query_map(params![project_id], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-        }) {
-            Ok(iter) => iter.filter_map(|r| r.ok()).collect(),
-            Err(e) => {
-                warn!("Embedding backfill query failed: {}", e);
-                return;
-            }
+            out
         };
         if rows.is_empty() {
             return;
@@ -634,31 +664,51 @@ impl Indexer {
             rows.len(),
             project_id
         );
-        for chunk in rows.chunks(64) {
-            let texts: Vec<String> = chunk
-                .iter()
-                .map(|(_, s)| s.chars().take(2000).collect())
-                .collect();
-            let refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
-            match embedder.embed(&refs) {
-                Ok(vectors) => {
-                    if vectors.is_empty() {
-                        return;
-                    }
-                    for ((node_id, _), vec) in chunk.iter().zip(vectors) {
-                        if let Err(e) =
-                            db::queries::upsert_embedding(&conn, *node_id, &vec, "all-MiniLM-L6-v2")
-                        {
-                            warn!("Failed to store embedding for node {}: {}", node_id, e);
-                        }
+        // BERT forward passes run across all CPU cores (rayon). The DB
+        // lock is released during inference and re-acquired only to write.
+        use rayon::prelude::*;
+        let batches: Vec<Vec<(i64, Vec<f32>)>> = rows
+            .par_chunks(64)
+            .map(|chunk| {
+                let texts: Vec<String> = chunk
+                    .iter()
+                    .map(|(_, s)| s.chars().take(2000).collect())
+                    .collect();
+                let refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
+                match embedder.embed(&refs) {
+                    Ok(vectors) if !vectors.is_empty() => chunk
+                        .iter()
+                        .zip(vectors)
+                        .map(|((node_id, _), vec)| (*node_id, vec))
+                        .collect(),
+                    Ok(_) => Vec::new(),
+                    Err(e) => {
+                        warn!("Embedding failed for a batch (skipped): {}", e);
+                        Vec::new()
                     }
                 }
-                Err(e) => {
-                    warn!("Embedding failed (backfill aborted): {}", e);
-                    return;
+            })
+            .collect();
+        let conn = match self.conn.lock() {
+            Ok(c) => c,
+            Err(e) => {
+                warn!("Embedding write-back skipped (DB lock poisoned): {}", e);
+                return;
+            }
+        };
+        let mut stored = 0usize;
+        for batch in batches {
+            for (node_id, vec) in batch {
+                if let Err(e) =
+                    db::queries::upsert_embedding(&conn, node_id, &vec, "all-MiniLM-L6-v2")
+                {
+                    warn!("Failed to store embedding for node {}: {}", node_id, e);
+                } else {
+                    stored += 1;
                 }
             }
         }
+        info!("Stored embeddings for {} nodes", stored);
     }
 
     fn resolve_test_contracts(
@@ -799,7 +849,6 @@ mod tests {
             project_root: None,
             graph_only: false,
             log_level: "info".to_string(),
-            watch: false,
         });
         (Indexer::new(config, conn), tmp)
     }
@@ -811,7 +860,6 @@ mod tests {
     }
 
     fn absolute_path(file: &str) -> String {
-        // The watcher sends OS-native absolute paths; incremental_update expects them
         std::path::PathBuf::from(file).to_string_lossy().to_string()
     }
 

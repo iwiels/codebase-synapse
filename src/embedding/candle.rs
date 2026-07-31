@@ -70,40 +70,60 @@ impl CandleEmbedder {
 
 impl Embedder for CandleEmbedder {
     fn embed(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        let mut results = Vec::with_capacity(texts.len());
+        // BERT's maximum sequence length for all-MiniLM-L6-v2.
+        const MAX_LEN: usize = 512;
+        if texts.is_empty() {
+            return Ok(Vec::new());
+        }
 
+        // Tokenize every text once, keeping raw ids + attention mask.
+        let mut encoded = Vec::with_capacity(texts.len());
+        let mut max_len = 0usize;
         for text in texts {
             let tokens = self
                 .tokenizer
                 .encode(*text, true)
                 .map_err(|e| anyhow::anyhow!("Tokenization error: {}", e))?;
+            let ids: Vec<u32> = tokens.get_ids().to_vec();
+            let mask: Vec<u32> = tokens.get_attention_mask().to_vec();
+            let len = ids.len().min(MAX_LEN);
+            max_len = max_len.max(len);
+            encoded.push((ids, mask, len));
+        }
+        let max_len = max_len.max(1);
 
-            let token_ids = tokens.get_ids();
-            let token_type_ids = tokens.get_type_ids();
-            let attention_mask = tokens.get_attention_mask();
-
-            let token_ids = Tensor::new(token_ids, &self.device)?.unsqueeze(0)?;
-            let token_type_ids = Tensor::new(token_type_ids, &self.device)?.unsqueeze(0)?;
-            let attention_mask = Tensor::new(attention_mask, &self.device)?.unsqueeze(0)?;
-
-            let output = self
-                .model
-                .forward(&token_ids, &token_type_ids, Some(&attention_mask))?;
-
-            let (_batch_size, _seq_len, _hidden) = output.dims3().unwrap_or((1, 0, self.dim));
-            let sum_hidden = output.sum_keepdim(1)?;
-            let count = attention_mask
-                .to_dtype(candle_core::DType::F32)?
-                .sum_keepdim(1)?
-                .unsqueeze(2)?;
-            let count = count.broadcast_as(sum_hidden.shape())?;
-
-            let pooled = (sum_hidden / count)?.squeeze(1)?.squeeze(0)?;
-            let embedding = pooled.to_vec1::<f32>()?;
-            results.push(embedding);
+        // Pad to a single batch and stack [B, L] tensors.
+        let batch = encoded.len();
+        let mut token_ids = vec![0u32; batch * max_len];
+        let token_type_ids = vec![0u32; batch * max_len];
+        let mut attention_mask = vec![0u32; batch * max_len];
+        for (i, (ids, mask, len)) in encoded.iter().enumerate() {
+            let base = i * max_len;
+            token_ids[base..base + *len].copy_from_slice(&ids[..*len]);
+            attention_mask[base..base + *len].copy_from_slice(&mask[..*len]);
         }
 
-        Ok(results)
+        let token_ids = Tensor::new(token_ids, &self.device)?.reshape((batch, max_len))?;
+        let token_type_ids =
+            Tensor::new(token_type_ids, &self.device)?.reshape((batch, max_len))?;
+        let attention_mask =
+            Tensor::new(attention_mask, &self.device)?.reshape((batch, max_len))?;
+
+        // One forward pass for the whole batch.
+        let output = self
+            .model
+            .forward(&token_ids, &token_type_ids, Some(&attention_mask))?;
+
+        // Mean pooling: sum hidden states over seq, divide by real token count.
+        let sum_hidden = output.sum_keepdim(1)?; // [B, 1, H]
+        let count = attention_mask
+            .to_dtype(candle_core::DType::F32)?
+            .sum_keepdim(1)?
+            .unsqueeze(2)?; // [B, 1, 1]
+        let count = count.broadcast_as(sum_hidden.shape())?;
+        let pooled = (sum_hidden / count)?.squeeze(1)?; // [B, H]
+
+        Ok(pooled.to_vec2::<f32>()?)
     }
 
     fn dimensions(&self) -> usize {

@@ -51,11 +51,21 @@ graph LR
 
 ## ⚡ Quick Start
 
+### 1. Index your project (CLI, Zoekt-style)
+
+```bash
+codebase-synapse index /path/to/your/repo
+```
+
+Indexing runs as a separate CLI command and writes into `~/.codebase-synapse/codebase.db`. The first index is the slow one; re-running it only re-indexes changed files. The MCP server never indexes — it only reads the pre-built index.
+
+### 2. Start the MCP server
+
 ```bash
 npx codebase-synapse
 ```
 
-That's it. No Docker. No database setup. No cloud. The server starts via stdio, indexes your project, and your MCP client connects automatically.
+That's it. No Docker. No database setup. No cloud. The server starts via stdio and serves the pre-built index to your MCP client.
 
 ### Configure your client
 
@@ -186,7 +196,7 @@ Rust · Python · TypeScript · JavaScript · Go · Java · C# · PHP · C · C+
 src/
 ├── parser/       # Tree-sitter parsing & entity extraction
 ├── graph/        # Knowledge graph, PageRank, Leiden clustering
-├── indexer/      # Repository indexing pipeline & file watcher
+├── indexer/      # Repository indexing pipeline
 ├── search/       # BM25 full-text + vector cosine + hybrid RRF
 ├── embedding/    # Candle-based local embeddings (feature-gated)
 ├── memory/       # Persistent & session memory stores

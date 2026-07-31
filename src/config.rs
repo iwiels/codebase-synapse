@@ -24,9 +24,6 @@ pub struct Cli {
     #[arg(long, default_value = "info")]
     pub log_level: String,
 
-    #[arg(long, default_value = "false")]
-    pub watch: bool,
-
     #[arg(long)]
     pub run_tool: Option<String>,
 
@@ -40,6 +37,13 @@ pub enum Commands {
     Artifact {
         #[command(subcommand)]
         action: ArtifactAction,
+    },
+    /// Index a repository from the command line (Zoekt-style).
+    /// Writes the index into the data_dir database; the MCP server
+    /// then only reads the pre-existing index (no in-server indexing).
+    Index {
+        /// Path to the repository to index
+        repo_path: PathBuf,
     },
 }
 
@@ -63,7 +67,6 @@ pub struct Config {
     pub project_root: Option<PathBuf>,
     pub graph_only: bool,
     pub log_level: String,
-    pub watch: bool,
 }
 
 impl Config {
@@ -90,7 +93,6 @@ impl Config {
             project_root,
             graph_only: cli.graph_only,
             log_level: cli.log_level.clone(),
-            watch: cli.watch,
         })
     }
 
